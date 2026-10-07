@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#060810">
+  <title>Unihedron SQM</title>
+  <script>
+    // Applied before first paint so a stored light theme never flashes dark.
+    try {
+      var stored = localStorage.getItem("sqm-theme");
+      if (stored === "light" || stored === "dark") {
+        document.documentElement.dataset.theme = stored;
+      }
+    } catch (e) { /* private mode */ }
+  </script>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-mark" viewBox="0 0 24 24"><path d="M15.52 13.28A3.75 3.75 0 1 1 9.59 9.13" stroke-opacity="0.95"/><path d="M6.94 16.24A6.6 6.6 0 1 1 18.60 12.00" stroke-opacity="0.75"/><path d="M10.36 2.69A9.45 9.45 0 1 1 5.93 19.24" stroke-opacity="0.55"/><circle cx="12" cy="12" r="1.6" style="fill: var(--ink); stroke: none"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 12l4.2-3.6"/><circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-meter" viewBox="0 0 24 24"><path d="M12 21v-8.2"/><circle cx="12" cy="10.2" r="2.1"/><path d="M6.9 15.3a7.2 7.2 0 010-10.2M17.1 5.1a7.2 7.2 0 010 10.2"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3.4v10.4m0 0l-3.7-3.7M12 13.8l3.7-3.7"/><path d="M4.4 16.4v2.2a2 2 0 002 2h11.2a2 2 0 002-2v-2.2"/></symbol>
+  <symbol id="i-account" viewBox="0 0 24 24"><circle cx="12" cy="8.2" r="3.5"/><path d="M4.9 20.2a7.4 7.4 0 0114.2 0"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 3.4a8.6 8.6 0 010 17.2z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.2v8.4"/><path d="M6.9 6.9a7.4 7.4 0 1010.2 0"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.2 12a8.2 8.2 0 11-2.6-6"/><path d="M20.4 3.8v4.5h-4.5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.6"/><path d="M15.9 15.9l4.5 4.5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16.6V5.8m0 0L8.2 9.6M12 5.8l3.8 3.8"/><path d="M4.4 15.6v3a2.4 2.4 0 002.4 2.4h10.4a2.4 2.4 0 002.4-2.4v-3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.2 7.4A2.4 2.4 0 015.6 5h3.1a2 2 0 011.5.7l1.1 1.3h7.1a2.4 2.4 0 012.4 2.4v8.2a2.4 2.4 0 01-2.4 2.4H5.6a2.4 2.4 0 01-2.4-2.4z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.6s-7.6-4.5-7.6-10a4.3 4.3 0 017.6-2.8 4.3 4.3 0 017.6 2.8c0 5.5-7.6 10-7.6 10z"/></symbol>
+</svg>
+
+<div class="backdrop" aria-hidden="true">
+  <div class="sky"><div class="sky-turn"><canvas id="sky-stars"></canvas></div></div>
+  <canvas id="meteors" class="meteors"></canvas>
+  <div class="horizon"></div>
+</div>
+
+<main id="login-view" class="login">
+  <section class="login-card">
+    <svg class="ico mark"><use href="#i-mark"></use></svg>
+    <h1>Sky quality,<br>on record.</h1>
+    <p class="lede">A local home for everything your permanently mounted SQM&#8209;LE measures.</p>
+    <form id="login-form" novalidate>
+      <label class="field">
+        <span>Username</span>
+        <input id="login-username" name="username" value="admin" autocomplete="username" spellcheck="false" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-error" class="form-error" role="alert"></p>
+      <button class="btn accent block" type="submit">Sign in</button>
+    </form>
+    <p class="fineprint">First start? The generated password is printed by <code>docker compose logs sqm</code>.</p>
+  </section>
+</main>
+
+<div id="app-view" class="shell" hidden>
+
+  <nav class="rail" aria-label="Sections">
+    <div class="rail-mark"><svg class="ico"><use href="#i-mark"></use></svg></div>
+    <div class="rail-nav">
+      <button class="rail-btn is-active" data-page="dashboard" aria-label="Overview">
+        <svg class="ico"><use href="#i-gauge"></use></svg><span class="tip">Overview</span>
+      </button>
+      <button class="rail-btn" data-page="device" aria-label="Meter">
+        <svg class="ico"><use href="#i-meter"></use></svg><span class="tip">Meter</span>
+      </button>
+      <button class="rail-btn" data-page="import" aria-label="Import">
+        <svg class="ico"><use href="#i-import"></use></svg><span class="tip">Import</span>
+      </button>
+      <button class="rail-btn" data-page="account" aria-label="Account">
+        <svg class="ico"><use href="#i-account"></use></svg><span class="tip">Account</span>
+      </button>
+    </div>
+    <div class="rail-foot">
+      <span class="rail-dot"><i id="side-status-dot"></i><span class="tip" id="side-status">Starting</span></span>
+      <a class="rail-btn" href="https://ko-fi.com/rkremeier" target="_blank" rel="noopener" aria-label="Support on Ko-fi">
+        <svg class="ico"><use href="#i-heart"></use></svg><span class="tip">Support on Ko-fi</span>
+      </a>
+      <button id="theme-button" class="rail-btn theme-btn" aria-label="Switch theme" aria-pressed="false">
+        <svg class="ico"><use href="#i-theme"></use></svg><span class="tip" id="theme-tip">Light mode</span>
+      </button>
+      <button id="logout-button" class="rail-btn" aria-label="Sign out">
+        <svg class="ico"><use href="#i-power"></use></svg><span class="tip">Sign out</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="console">
+    <div class="console-scroll">
+
+      <header class="console-head">
+        <h2 id="page-title">Overview</h2>
+        <p id="station-name" class="station-name"></p>
+      </header>
+
+      <div id="password-banner" class="banner" hidden>
+        <svg class="ico sm"><use href="#i-alert"></use></svg>
+        <p>You are signed in with the generated first-run password.</p>
+        <button class="btn ghost sm" data-go="account">Change it</button>
+      </div>
+
+      <section id="page-dashboard" class="page is-active">
+        <section class="panel now" aria-label="Current sky">
+          <div class="now-reading">
+            <strong id="latest-mpsas" class="now-value num">—</strong>
+            <span class="now-unit">mag/arcsec²</span>
+          </div>
+          <div class="now-sky">
+            <ol class="bortle" id="bortle" aria-label="Bortle dark-sky scale">
+              <li data-class="9">9</li><li data-class="8">8</li><li data-class="7">7</li>
+              <li data-class="6">6</li><li data-class="5">5</li><li data-class="4">4</li>
+              <li data-class="3">3</li><li data-class="2">2</li><li data-class="1">1</li>
+            </ol>
+            <p class="now-class"><strong id="bortle-name">Waiting for a night reading</strong><span id="bortle-detail"></span></p>
+          </div>
+          <dl class="now-facts">
+            <div><dt>Sensor</dt><dd id="latest-temp">—</dd></div>
+            <div><dt>Last reading</dt><dd id="latest-time">—</dd></div>
+            <div><dt>Collector</dt><dd><i id="live-dot" class="live-dot"></i><span id="collector-word">Starting</span></dd></div>
+          </dl>
+          <p id="collector-note" class="now-note" hidden></p>
+        </section>
+
+        <section class="panel year-panel">
+          <header class="panel-head">
+            <h3>
+              <label class="year-title">Nights in
+                <select id="annual-year" aria-label="Year"></select>
+              </label>
+            </h3>
+            <p id="annual-caption" class="panel-meta"></p>
+            <div class="year-scale" aria-label="Colour scale from brighter to darker sky">
+              <span>Brighter</span><i></i><span>Darker</span>
+            </div>
+          </header>
+          <div class="year-map-wrap">
+            <canvas id="annual-map" role="img" aria-label="Annual sky brightness map"></canvas>
+            <div id="annual-tip" class="chart-tip year-tip" hidden></div>
+            <div id="annual-empty" class="chart-empty" hidden>No nighttime readings for this year.</div>
+          </div>
+          <p class="panel-foot">Each column is one night from 18:00 to 07:00, shaded by 30-minute averages. Gaps are times without a valid reading.</p>
+        </section>
+
+        <div class="dash-lower">
+          <section class="panel chart-panel">
+            <header class="panel-head">
+              <h3>Sky brightness</h3>
+              <div class="seg" role="group" aria-label="Chart range">
+                <i class="seg-thumb" aria-hidden="true"></i>
+                <button class="seg-btn is-active" data-hours="24" data-label="Last 24 hours">24h</button>
+                <button class="seg-btn" data-hours="168" data-label="Last 7 days">7d</button>
+                <button class="seg-btn" data-hours="720" data-label="Last 30 days">30d</button>
+                <button class="seg-btn" data-hours="8760" data-label="Last year">1y</button>
+                <button class="seg-btn" data-hours="43800" data-label="Last 5 years">5y</button>
+              </div>
+              <button id="refresh-button" class="icon-btn" aria-label="Refresh now">
+                <svg class="ico sm"><use href="#i-refresh"></use></svg>
+              </button>
+            </header>
+            <div class="chart-wrap">
+              <canvas id="history-chart" role="img" aria-label="Sky brightness history"></canvas>
+              <div id="chart-tip" class="chart-tip" hidden></div>
+              <div id="chart-empty" class="chart-empty" hidden>No readings in this range yet.</div>
+            </div>
+          </section>
+
+          <section class="panel stats-panel">
+            <h3 id="range-title">Last 24 hours</h3>
+            <dl class="stats">
+              <div><dt>Darkest</dt><dd><strong id="range-max" class="num">—</strong> mag/arcsec²</dd></div>
+              <div><dt>Average</dt><dd><strong id="range-avg" class="num">—</strong> mag/arcsec²</dd></div>
+              <div><dt>Brightest</dt><dd><strong id="range-min" class="num">—</strong> mag/arcsec²</dd></div>
+              <div><dt>Readings</dt><dd><strong id="range-count" class="num">—</strong></dd></div>
+            </dl>
+          </section>
+        </div>
+      </section>
+
+      <section id="page-device" class="page">
+        <div class="duo">
+          <article class="card form-card">
+            <h3>Meter connection</h3>
+            <p class="muted sm">Choose Ethernet or USB serial, then enter an endpoint or pick one from discovery.</p>
+            <form id="device-form">
+              <label class="field">
+                <span>Connection type</span>
+                <select id="device-transport">
+                  <option value="ethernet">Ethernet (SQM-LE)</option>
+                  <option value="serial">USB or serial (SQM-LU, LU-DL, LR)</option>
+                </select>
+              </label>
+              <div id="ethernet-fields" class="field-row">
+                  <label class="field grow">
+                    <span>Host or IP</span>
+                    <input id="device-host" placeholder="192.168.1.50" spellcheck="false">
+                  </label>
+                  <label class="field port">
+                    <span>TCP port</span>
+                    <input id="device-port" type="number" min="1" max="65535" value="10001">
+                  </label>
+              </div>
+              <div id="serial-fields" hidden>
+                <div class="field-row">
+                  <label class="field grow">
+                    <span>Container device path</span>
+                    <input id="serial-device" placeholder="/dev/sqm" spellcheck="false">
+                    <small>Map the host meter into the container, preferably at <code>/dev/sqm</code>.</small>
+                  </label>
+                  <label class="field baud">
+                    <span>Baud rate</span>
+                    <input id="serial-baud" type="number" min="1200" max="3000000" value="115200">
+                  </label>
+                </div>
+              </div>
+              <div class="actions">
+                <button id="test-device" class="btn ghost" type="button">Test connection</button>
+                <button class="btn accent" type="submit">Save &amp; collect</button>
+              </div>
+              <p id="device-message" class="form-message" role="status"></p>
+            </form>
+          </article>
+
+          <article class="card form-card">
+            <h3 id="discovery-heading">Find SQM&#8209;LE meters</h3>
+            <p id="discovery-copy" class="muted sm">Uses Unihedron’s UDP broadcast. Add your LAN subnet as a fallback when Docker or a VLAN swallows the replies.</p>
+            <div id="network-discovery-panel">
+              <form id="discovery-form">
+                <label class="field">
+                  <span>Broadcast address</span>
+                  <input id="broadcast-address" value="255.255.255.255" spellcheck="false">
+                </label>
+                <label class="field">
+                  <span>Fallback subnet <em>optional</em></span>
+                  <input id="scan-subnet" placeholder="192.168.1.0/24" spellcheck="false">
+                  <small>Scans up to 256 addresses, such as a /24 network.</small>
+                </label>
+                <div class="actions">
+                  <button class="btn accent" type="submit">
+                    <svg class="ico sm"><use href="#i-search"></use></svg> Discover meters
+                  </button>
+                </div>
+              </form>
+            </div>
+            <div id="serial-discovery-panel" hidden>
+              <p class="serial-note">The container can test USB devices explicitly mapped into it. No privileged access or whole-host device scan is required.</p>
+              <form id="serial-discovery-form">
+                <div class="actions">
+                  <button class="btn accent" type="submit">
+                    <svg class="ico sm"><use href="#i-search"></use></svg> Find mapped USB meters
+                  </button>
+                </div>
+              </form>
+            </div>
+          </article>
+        </div>
+
+        <article class="card">
+          <div class="card-top">
+            <h3 id="discovery-title">No scan run yet</h3>
+            <span id="discovery-spinner" class="spinner" hidden></span>
+          </div>
+          <div id="discovery-results" class="results">
+            <div class="empty">Run discovery with the meter powered on and available to this Docker host.</div>
+          </div>
+        </article>
+
+        <div class="duo meter-duo">
+          <article class="card form-card">
+            <div class="card-top">
+              <h3 id="meter-title">Meter details</h3>
+              <button id="meter-refresh" class="btn ghost sm" type="button">Read meter</button>
+            </div>
+            <div id="meter-health" class="banner" hidden>
+              <svg class="ico sm"><use href="#i-alert"></use></svg>
+              <p id="meter-health-text"></p>
+            </div>
+            <div id="meter-facts" class="facts"></div>
+            <p id="meter-message" class="form-message" role="status"></p>
+          </article>
+
+          <article class="card form-card">
+            <div class="card-top">
+              <h3>Interval reporting</h3>
+              <span id="interval-title" class="state-tag">Unknown</span>
+            </div>
+            <p id="interval-summary" class="muted sm">Read the meter to see its interval settings.</p>
+            <p class="muted sm">This collector asks the meter for each reading, so pushed interval reports aren’t needed and slow each poll by a few seconds.</p>
+            <form id="interval-form" hidden>
+              <div class="field-row">
+                <label class="field grow">
+                  <span>Report every (seconds)</span>
+                  <input id="interval-period" type="number" min="0" max="604800" required>
+                  <small>0 turns interval reporting off.</small>
+                </label>
+                <label class="field grow">
+                  <span>Only darker than <em>optional</em></span>
+                  <input id="interval-threshold" type="number" min="0" max="30" step="0.01">
+                  <small>In mag/arcsec².</small>
+                </label>
+              </div>
+              <label class="check">
+                <input id="interval-permanent" type="checkbox">
+                <span>Keep after the meter restarts <small>Writes the meter’s permanent memory. Leave off to change it only until the next restart.</small></span>
+              </label>
+              <div class="actions">
+                <button id="interval-off" class="btn ghost" type="button">Turn off</button>
+                <button class="btn accent" type="submit">Apply</button>
+              </div>
+              <p id="interval-message" class="form-message" role="status"></p>
+            </form>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-import" class="page">
+        <article class="card upload-card">
+          <h3>Import Device Manager logs</h3>
+          <p class="muted sm">Standard SDF 1.0 <code>.dat</code> files and matching six-column <code>.csv</code> files. Timestamps are de-duplicated, so re-running an import is safe.</p>
+          <input id="log-files" type="file" accept=".dat,.csv" multiple hidden>
+          <button id="drop-zone" class="drop" type="button">
+            <svg class="ico lg"><use href="#i-upload"></use></svg>
+            <strong>Choose logs, or drop them here</strong>
+            <small>Several .dat or .csv files at once, up to 20 MB each</small>
+          </button>
+          <div class="import-actions">
+            <span id="selected-files">No files selected</span>
+            <button id="upload-button" class="btn accent" disabled>Import selected</button>
+          </div>
+          <div id="directory-import-wrap" class="mounted" hidden>
+            <svg class="ico sm"><use href="#i-folder"></use></svg>
+            <div>
+              <strong>Mounted log directory detected</strong>
+              <small id="import-directory-label"></small>
+            </div>
+            <button id="directory-import-button" class="btn ghost sm">Import directory</button>
+          </div>
+          <div id="import-progress" class="thin-bar indeterminate" hidden><i></i></div>
+          <p id="import-message" class="form-message" role="status"></p>
+        </article>
+
+        <article class="card">
+          <div class="card-top">
+            <h3>Import history</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>File</th><th>Added</th><th>Duplicates</th><th>Bad rows</th><th>When</th></tr></thead>
+              <tbody id="import-history"><tr><td colspan="5" class="muted">No imports yet.</td></tr></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="page-account" class="page">
+        <div class="duo">
+          <article class="card form-card">
+            <h3>Support this project</h3>
+            <p class="muted sm">If this collector is useful at your observatory, a Ko-fi tip helps keep it maintained.</p>
+            <div class="actions">
+              <a class="btn accent" href="https://ko-fi.com/rkremeier" target="_blank" rel="noopener">
+                Support on Ko-fi
+              </a>
+            </div>
+          </article>
+
+          <article class="card form-card">
+            <h3>Meteors</h3>
+            <p class="muted sm">How often shooting stars cross the night sky. Saved in this browser.</p>
+            <div class="seg meteor-seg" role="group" aria-label="Meteor frequency">
+              <i class="seg-thumb" aria-hidden="true"></i>
+              <button class="seg-btn" data-meteors="off">Off</button>
+              <button class="seg-btn" data-meteors="rare">Rare</button>
+              <button class="seg-btn" data-meteors="normal">Normal</button>
+              <button class="seg-btn" data-meteors="frequent">Frequent</button>
+              <button class="seg-btn" data-meteors="shower">Shower</button>
+            </div>
+            <p id="meteor-note" class="form-message"></p>
+          </article>
+
+          <article class="card form-card">
+            <h3>Change admin password</h3>
+            <p class="muted sm">Twelve characters or more. Every device is signed out once the change lands.</p>
+            <form id="password-form">
+              <label class="field">
+                <span>Current password</span>
+                <input id="current-password" type="password" autocomplete="current-password" required>
+              </label>
+              <label class="field">
+                <span>New password</span>
+                <input id="new-password" type="password" minlength="12" autocomplete="new-password" required>
+              </label>
+              <label class="field">
+                <span>Confirm new password</span>
+                <input id="confirm-password" type="password" minlength="12" autocomplete="new-password" required>
+              </label>
+              <div class="actions">
+                <button class="btn accent" type="submit">Change password</button>
+              </div>
+              <p id="password-message" class="form-message" role="status"></p>
+            </form>
+          </article>
+
+          <article class="card form-card">
+            <h3>JSON API</h3>
+            <p class="muted sm">Read-only endpoints for readings, statistics, and meter details. Send the generated key in the <code>X-API-Key</code> header.</p>
+            <pre><code>curl -H "X-API-Key: …" \
+  http://localhost:7942/api/latest</code></pre>
+            <p class="muted sm">The key lives at <code>/data/api_key</code> inside the container.</p>
+            <div class="actions">
+              <a class="btn ghost" href="/docs" target="_blank" rel="noopener">
+                API documentation
+              </a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

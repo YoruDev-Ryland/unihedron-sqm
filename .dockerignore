@@ -1,0 +1,19 @@
+.git
+.github
+.venv
+**/.venv
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+tests
+Data Files
+Service Files
+AstroQC
+UliseLicenseServerDocs
+UliseServerFiles
+*.db
+*.db-*
+.env
+docs
+README.md
+compose*.yaml

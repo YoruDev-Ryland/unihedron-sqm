@@ -1,0 +1,20 @@
+.env
+.venv/
+.idea/
+.vscode/
+.pytest_cache/
+**/__pycache__/
+**/*.py[cod]
+*.db
+*.db-*
+
+# Runtime data and copied Unihedron logs are intentionally kept locally.
+# They contain device serial/MAC/IP details and must not be published.
+Data Files/
+Service Files/
+data/
+imports/
+
+# One-time credentials and other generated secrets.
+initial_admin_credentials.txt
+api_key

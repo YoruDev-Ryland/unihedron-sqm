@@ -1,0 +1,44 @@
+name: unihedron-sqm
+
+services:
+  sqm:
+    image: ${SQM_IMAGE:-ghcr.io/yorudev-ryland/unihedron-sqm:latest}
+    container_name: unihedron-sqm
+    restart: unless-stopped
+    ports:
+      - "${SQM_WEB_PORT:-7942}:7942"
+    environment:
+      TZ: ${TZ:-UTC}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:7942}
+      # Optional: skip setup and start with an Ethernet or USB meter.
+      SQM_TRANSPORT: ${SQM_TRANSPORT:-}
+      SQM_HOST: ${SQM_HOST:-}
+      SQM_PORT: ${SQM_PORT:-}
+      SQM_SERIAL_DEVICE: ${SQM_SERIAL_DEVICE:-}
+      SQM_BAUD_RATE: ${SQM_BAUD_RATE:-}
+      SQM_POLL_INTERVAL: ${SQM_POLL_INTERVAL:-60}
+      SQM_CONNECT_TIMEOUT: ${SQM_CONNECT_TIMEOUT:-5}
+      SQM_READ_TIMEOUT: ${SQM_READ_TIMEOUT:-120}
+      SQM_RETENTION_DAYS: ${SQM_RETENTION_DAYS:-0}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      API_KEY: ${API_KEY:-}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-20}
+    volumes:
+      - sqm-data:/data
+      # To import an existing UDM log directory from the web UI, uncomment:
+      # - /path/to/Unihedron/logs:/imports:ro
+    # For a USB SQM on Linux, map its stable /dev/serial/by-id path:
+    # devices:
+    #   - /dev/serial/by-id/usb-FTDI_YOUR_METER:/dev/sqm
+    # group_add:
+    #   - "${SQM_SERIAL_GID:-20}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  sqm-data:
