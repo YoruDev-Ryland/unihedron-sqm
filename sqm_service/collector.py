@@ -27,6 +27,18 @@ class Collector:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._wake = asyncio.Event()
+        self._listeners: list = []
+
+    def add_listener(self, callback) -> None:
+        """Call `callback(collector, reading)` after every poll; reading is None on failure."""
+        self._listeners.append(callback)
+
+    def _notify(self, reading: dict | None) -> None:
+        for callback in self._listeners:
+            try:
+                callback(self, reading)
+            except Exception:
+                log.exception("collector listener failed")
 
     def start(self) -> None:
         if not self._task:
@@ -221,6 +233,8 @@ class Collector:
                 self.last_success_ts = time.time()
                 self.last_error = None
                 self.state = "collecting"
+                reading["ts"] = self.last_success_ts
+                self._notify(reading)
                 if self.config.retention_days > 0:
                     removed = await loop.run_in_executor(
                         None, self.db.prune, self.config.retention_days
@@ -231,8 +245,10 @@ class Collector:
                 self.last_error = str(exc)
                 self.state = "offline"
                 log.warning("poll failed: %s", exc)
+                self._notify(None)
             except Exception:
                 self.last_error = "unexpected collector error; see container logs"
                 self.state = "error"
                 log.exception("unexpected collector error")
+                self._notify(None)
             await self._wait()
