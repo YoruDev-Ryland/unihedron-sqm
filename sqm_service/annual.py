@@ -9,11 +9,18 @@ from .db import Database
 
 SLOT_MINUTES = 30
 SLOT_SECONDS = SLOT_MINUTES * 60
-NIGHT_START_HOUR = 18
-NIGHT_END_HOUR = 7
+# A wide window from 16:00 to 09:00 keeps each night centred in its column,
+# with dusk and dawn visible above and below it.
+NIGHT_START_HOUR = 16
+NIGHT_END_HOUR = 9
 SLOTS_PER_NIGHT = ((24 - NIGHT_START_HOUR) + NIGHT_END_HOUR) * 2
 SCALE_MIN_MPSAS = 16.0
-SCALE_MAX_MPSAS = 22.5
+SCALE_MAX_MPSAS = 22.0
+# Cells fade in from fully transparent at 10 mag/arcsec² to fully opaque at
+# 17, so twilight blends into the night. Readings below 10 (daylight) are not
+# loaded at all.
+FADE_MIN_MPSAS = 10.0
+FADE_MAX_MPSAS = 17.0
 
 
 def timezone_for(name: str) -> ZoneInfo:
@@ -53,7 +60,7 @@ def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
     # During the fall DST fold, two UTC bins can map to one local cell. Keep a
     # weighted aggregate so both repeated half-hours are represented.
     cells: dict[tuple[int, int], tuple[float, int]] = {}
-    for item in db.annual_bins(start, end, SLOT_SECONDS):
+    for item in db.annual_bins(start, end, SLOT_SECONDS, minimum_mpsas=FADE_MIN_MPSAS):
         bin_number = int(item["bin"])
         midpoint = start + bin_number * SLOT_SECONDS + SLOT_SECONDS / 2
         local = datetime.fromtimestamp(midpoint, timezone)
@@ -100,6 +107,8 @@ def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
         "slots": SLOTS_PER_NIGHT,
         "scale_min_mpsas": SCALE_MIN_MPSAS,
         "scale_max_mpsas": SCALE_MAX_MPSAS,
+        "fade_min_mpsas": FADE_MIN_MPSAS,
+        "fade_max_mpsas": FADE_MAX_MPSAS,
         "observed_nights": len({cell["day"] for cell in output}),
         "reading_count": sum(cell["count"] for cell in output),
         "min_mpsas": min(values) if values else None,

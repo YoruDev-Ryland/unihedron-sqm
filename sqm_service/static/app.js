@@ -822,6 +822,12 @@ function annualCellColor(value, annual) {
     : mixColor(middle, dark, (fraction - 0.5) * 2);
 }
 
+// Twilight fades in linearly from transparent to opaque across the fade range.
+function annualCellOpacity(value, annual) {
+  return Math.max(0, Math.min(1,
+    (Number(value) - annual.fade_min_mpsas) / (annual.fade_max_mpsas - annual.fade_min_mpsas)));
+}
+
 function annualDate(year, day) {
   return new Date(Date.UTC(year, 0, day + 1, 12));
 }
@@ -854,6 +860,8 @@ async function loadAnnual(year = null, silent = false) {
     }));
     $("#annual-caption").textContent =
       `${formatInteger(annual.observed_nights)} of ${annual.days} nights recorded, ${annual.timezone} time`;
+    $("#annual-foot").textContent =
+      `Each column is one night from ${annualTime(annual.night_start_hour * 60)} to ${annualTime(annual.night_end_hour * 60)}, shaded by 30-minute averages. Gaps are times without a reading.`;
     $("#annual-map").setAttribute(
       "aria-label",
       `${annual.year} sky brightness map with ${annual.observed_nights} observing nights`,
@@ -920,6 +928,7 @@ function renderAnnualMap() {
   const revealDay = state.annualReveal === null ? Infinity : state.annualReveal * annual.days;
   cells.forEach((cell) => {
     if (cell.day > revealDay) return;
+    ctx.globalAlpha = annualCellOpacity(cell.mpsas, annual);
     ctx.fillStyle = annualCellColor(cell.mpsas, annual);
     ctx.fillRect(
       pad.left + cell.day * dayWidth,
@@ -928,6 +937,7 @@ function renderAnnualMap() {
       Math.max(1, slotHeight + 0.2),
     );
   });
+  ctx.globalAlpha = 1;
 
   if (revealDay !== Infinity) {
     const edge = pad.left + revealDay * dayWidth;
@@ -945,13 +955,12 @@ function renderAnnualMap() {
   ctx.fillStyle = label;
   ctx.lineWidth = 1;
 
-  const timeMarks = [
-    [0, "18:00"],
-    [6, "21:00"],
-    [12, "00:00"],
-    [18, "03:00"],
-    [24, "06:00"],
-  ];
+  // Label every three hours from 18:00, placed by the server's night window.
+  const slotsPerHour = 60 / annual.slot_minutes;
+  const timeMarks = [18, 21, 0, 3, 6].map((hour) => [
+    ((hour - annual.night_start_hour + 24) % 24) * slotsPerHour,
+    `${String(hour).padStart(2, "0")}:00`,
+  ]).filter(([slot]) => slot <= annual.slots);
   timeMarks.forEach(([slot, text]) => {
     const y = Math.round(pad.top + slot * slotHeight) + 0.5;
     ctx.beginPath();

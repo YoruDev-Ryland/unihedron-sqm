@@ -35,9 +35,24 @@ def test_annual_map_groups_complete_observing_nights(tmp_path: Path):
     database.insert_reading(
         reading(21.5), local_timestamp(2025, 1, 2, 0, 10)
     )
-    # Daylight/invalid zero values are omitted.
+    # Morning twilight up to 09:00 also belongs to the previous evening.
+    database.insert_reading(
+        reading(14.0), local_timestamp(2025, 1, 2, 8, 40)
+    )
+    # Midday falls outside the 16:00 to 09:00 window.
     database.insert_reading(
         reading(0.0), local_timestamp(2025, 1, 2, 12, 0)
+    )
+    # Readings below 10 mag/arcsec² (daylight) are never loaded.
+    database.insert_reading(
+        reading(0.0), local_timestamp(2025, 1, 2, 16, 10)
+    )
+    database.insert_reading(
+        reading(9.9), local_timestamp(2025, 1, 2, 16, 20)
+    )
+    # Exactly 10 is kept; it is drawn fully transparent by the client.
+    database.insert_reading(
+        reading(10.0), local_timestamp(2025, 1, 2, 16, 40)
     )
     database.insert_reading(
         reading(19.0), local_timestamp(2025, 1, 2, 18, 10)
@@ -47,12 +62,19 @@ def test_annual_map_groups_complete_observing_nights(tmp_path: Path):
     cells = {(cell["day"], cell["slot"]): cell for cell in result["cells"]}
 
     assert result["days"] == 365
+    assert result["slots"] == 34
+    assert (result["night_start_hour"], result["night_end_hour"]) == (16, 9)
+    assert (result["scale_min_mpsas"], result["scale_max_mpsas"]) == (16.0, 22.0)
+    assert (result["fade_min_mpsas"], result["fade_max_mpsas"]) == (10.0, 17.0)
     assert result["observed_nights"] == 2
-    assert cells[(0, 0)]["mpsas"] == 19.0
-    assert cells[(0, 0)]["count"] == 2
-    assert cells[(0, 12)]["mpsas"] == 21.5
-    assert cells[(1, 0)]["mpsas"] == 19.0
-    assert len(cells) == 3
+    assert cells[(0, 4)]["mpsas"] == 19.0
+    assert cells[(0, 4)]["count"] == 2
+    assert cells[(0, 16)]["mpsas"] == 21.5
+    assert cells[(0, 33)]["mpsas"] == 14.0
+    assert (1, 0) not in cells
+    assert cells[(1, 1)]["mpsas"] == 10.0
+    assert cells[(1, 4)]["mpsas"] == 19.0
+    assert len(cells) == 5
     database.close()
 
 

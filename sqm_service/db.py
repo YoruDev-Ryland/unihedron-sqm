@@ -236,7 +236,7 @@ class Database:
 
         SQLite reduces roughly half a million minute readings to at most
         17,544 half-hour bins. Local-day/DST mapping is then handled in Python.
-        Zero/daylight readings are excluded from the nighttime visualization.
+        Readings below `minimum_mpsas` are left out of the bins.
         """
         with self._lock:
             rows = self._conn.execute(
