@@ -132,32 +132,36 @@ class Database:
         if not candidates:
             return 0, 0
 
+        # Readings match on the millisecond: collected timestamps carry more
+        # precision than log files and exports keep.
+        def millisecond(value: float) -> int:
+            return round(float(value) * 1000)
+
         # Dedupe within this file before querying SQLite.
-        unique: dict[float, tuple] = {}
+        unique: dict[int, tuple] = {}
         duplicates = 0
         for row in candidates:
-            timestamp = float(row[0])
-            if timestamp in unique:
+            key = millisecond(row[0])
+            if key in unique:
                 duplicates += 1
             else:
-                unique[timestamp] = row
+                unique[key] = row
 
         with self._lock:
-            existing: set[float] = set()
-            timestamps = list(unique)
-            # Stay well below SQLite's traditional 999-variable limit.
-            for start in range(0, len(timestamps), 800):
-                chunk = timestamps[start : start + 800]
-                marks = ",".join("?" for _ in chunk)
+            existing: set[int] = set()
+            keys = sorted(unique)
+            # Sorted chunks become narrow time ranges, each read once.
+            for start in range(0, len(keys), 800):
+                chunk = keys[start : start + 800]
                 existing.update(
-                    float(row[0])
+                    millisecond(row[0])
                     for row in self._conn.execute(
-                        f"SELECT ts FROM readings WHERE ts IN ({marks})", chunk
+                        "SELECT ts FROM readings WHERE ts BETWEEN ? AND ?",
+                        ((chunk[0] - 1) / 1000, (chunk[-1] + 1) / 1000),
                     )
                 )
-            new_rows = [
-                row for timestamp, row in unique.items() if timestamp not in existing
-            ]
+            existing &= set(keys)
+            new_rows = [row for key, row in unique.items() if key not in existing]
             duplicates += len(existing)
             self._conn.executemany(
                 """INSERT INTO readings

@@ -17,7 +17,8 @@ CSV_HEADER = "utc_iso,local_iso,mpsas,temperature_c,frequency_hz,period_counts,p
 
 
 def _stamp(ts: float, zone) -> str:
-    return datetime.fromtimestamp(ts, zone).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+    # Round (not truncate) to the millisecond, matching how imports dedupe.
+    return datetime.fromtimestamp(round(ts, 3), zone).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
 
 
 def _dat_header(zone_name: str, serial: int | None) -> str:

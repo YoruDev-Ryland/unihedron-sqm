@@ -52,3 +52,14 @@ def test_empty_range_gives_header_only(tmp_path):
 def test_filename():
     assert exporter.filename("csv", 4171, 1_760_000_000, 1_760_420_000, "UTC") == "sqm-4171-20251009-20251014.csv"
     assert exporter.filename("dat", None, None, None, "UTC") == "sqm-meter-empty.dat"
+
+
+def test_dat_export_reimports_into_the_same_database_without_duplicates(tmp_path):
+    db = Database(tmp_path / "a.db")
+    # Collected readings carry sub-millisecond time.time() precision.
+    for index in range(5):
+        db.insert_reading(reading(21.0), 1_760_000_000.123456 + index * 60.000789)
+    text = "".join(exporter.stream(db, "dat", None, None, "UTC", 4171))
+    result = import_text(db, "export.dat", text.encode())
+    assert (result.imported, result.duplicates) == (0, 5)
+    assert db.count() == 5
