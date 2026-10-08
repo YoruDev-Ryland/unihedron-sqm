@@ -1494,9 +1494,11 @@ async function pollLogger() {
       setMessage($("#logger-message"), `Reading ${formatInteger(status.read)} of ${formatInteger(status.total)} records…`);
       setTimeout(pollLogger, 1000);
     } else if (status.error) {
-      setMessage($("#logger-message"), status.error, "error");
+      const kept = status.imported ? ` ${formatInteger(status.imported)} readings were saved before it stopped.` : "";
+      setMessage($("#logger-message"), `The download stopped: ${status.error}.${kept}`, "error");
     } else if (status.total) {
-      setMessage($("#logger-message"), `Added ${formatInteger(status.imported)} readings; ${formatInteger(status.duplicates)} were already stored.`, "success");
+      const skipped = status.skipped ? ` ${formatInteger(status.skipped)} unreadable records were skipped.` : "";
+      setMessage($("#logger-message"), `Added ${formatInteger(status.imported)} readings; ${formatInteger(status.duplicates)} were already stored.${skipped}`, "success");
     }
   } catch (error) {
     if (error.status === 401) showLogin();

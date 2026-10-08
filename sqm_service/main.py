@@ -770,6 +770,7 @@ async def change_interval(
 
 
 logger_job = logger_dl.LoggerDownload()
+logger_task: asyncio.Task | None = None
 
 
 @app.get("/api/meter/logger", tags=["web"])
@@ -787,7 +788,9 @@ async def start_logger_download(_: dict = Depends(require_csrf)) -> dict:
     # Mark it running before returning, so a second click is refused even if
     # the task has not started yet.
     logger_job.state["running"] = True
-    asyncio.create_task(logger_job.run(collector.session, db, serial))
+    # Keep a reference: the event loop holds tasks only weakly.
+    global logger_task
+    logger_task = asyncio.create_task(logger_job.run(collector.session, db, serial))
     return logger_job.state
 
 

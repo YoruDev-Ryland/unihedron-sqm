@@ -239,3 +239,16 @@ def test_details_probe_logger_when_asked():
     fake.replies[b"L1x"] = "L1,0000000042"
     assert run(meter.read_details(fake.send, probe_logger=True))["logger"] == {"records": 42}
     assert run(meter.read_details(FakeMeter().send))["logger"] is None
+
+
+def test_logger_probe_uses_a_short_timeout():
+    fake = FakeMeter()
+    seen = {}
+
+    async def send(command, match, timeout):
+        if command == b"L1x":
+            seen["timeout"] = timeout
+        return await fake.send(command, match, timeout)
+
+    run(meter.read_details(send, probe_logger=True))
+    assert seen["timeout"] <= 2

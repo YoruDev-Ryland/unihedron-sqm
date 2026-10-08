@@ -18,6 +18,9 @@ Send = Callable[[bytes, Callable[[str], bool], float], Awaitable[str]]
 Identify = Callable[[], Awaitable[dict]]
 
 COMMAND_TIMEOUT = 5.0
+# An SQM-LU-DL answers `L1x` at once; other meters stay silent, so a short wait
+# keeps the Meter page quick for the many USB meters without a logger.
+LOGGER_PROBE_TIMEOUT = 1.5
 MAX_PERIOD_S = 7 * 24 * 3600
 MAX_THRESHOLD_MPSAS = 30.0
 
@@ -224,7 +227,7 @@ async def read_details(
         # Only an SQM-LU-DL answers `L1x`; silence just means no logger, so it
         # is not reported as an error.
         try:
-            line = await send(b"L1x", lambda reply: reply.startswith("L1,"), COMMAND_TIMEOUT)
+            line = await send(b"L1x", lambda reply: reply.startswith("L1,"), LOGGER_PROBE_TIMEOUT)
             details["logger"] = {"records": int(line.split(",", 1)[1])}
         except (SQMError, ValueError, IndexError):
             details["logger"] = None

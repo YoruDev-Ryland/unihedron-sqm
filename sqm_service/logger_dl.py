@@ -43,28 +43,48 @@ def parse_record(line: str) -> tuple | None:
 
 class LoggerDownload:
     def __init__(self) -> None:
-        self.state = {"running": False, "total": 0, "read": 0, "imported": 0, "duplicates": 0, "error": None}
+        self.state = self._fresh(running=False)
+
+    @staticmethod
+    def _fresh(running: bool) -> dict:
+        return {"running": running, "total": 0, "read": 0, "imported": 0,
+                "duplicates": 0, "skipped": 0, "error": None}
+
+    def _store(self, db, rows: list[tuple]) -> None:
+        imported, duplicates = db.import_readings(rows)
+        self.state["imported"] += imported
+        self.state["duplicates"] += duplicates
 
     async def run(self, session_factory, db, serial: str) -> None:
-        self.state = {"running": True, "total": 0, "read": 0, "imported": 0, "duplicates": 0, "error": None}
-        rows: list[tuple] = []
+        self.state = self._fresh(running=True)
         try:
             async with session_factory() as link:
                 total = parse_pointer(await link.send(b"L1x", lambda l: l.startswith("L1,"), TIMEOUT))
             self.state["total"] = total
             for start in range(0, total, CHUNK):
+                rows: list[tuple] = []
                 # Release the connection between chunks so collection continues.
                 async with session_factory() as link:
                     for pointer in range(start, min(start + CHUNK, total)):
                         line = await link.send(b"L4%010dx" % pointer, lambda l: l.startswith("L4,"), TIMEOUT)
-                        row = parse_record(line)
+                        try:
+                            row = parse_record(line)
+                        except (SQMError, ValueError):
+                            # A corrupt record (for example an impossible date)
+                            # is skipped rather than ending the download.
+                            self.state["skipped"] += 1
+                            row = None
                         if row is not None:
                             rows.append(row)
                         self.state["read"] = pointer + 1
-            imported, duplicates = db.import_readings(rows)
-            db.record_import(f"LU-DL download (serial {serial})", imported, duplicates, 0)
-            self.state.update(imported=imported, duplicates=duplicates)
-        except SQMError as exc:
-            self.state["error"] = str(exc)
+                # Store each chunk as it completes, so a later failure keeps it.
+                self._store(db, rows)
+        except Exception as exc:
+            self.state["error"] = str(exc) or exc.__class__.__name__
         finally:
+            if self.state["read"]:
+                db.record_import(
+                    f"LU-DL download (serial {serial})",
+                    self.state["imported"], self.state["duplicates"], self.state["skipped"],
+                )
             self.state["running"] = False
