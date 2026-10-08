@@ -349,9 +349,14 @@
                 <option value="24">Last 24 hours</option><option value="168">Last 7 days</option>
                 <option value="720">Last 30 days</option><option value="8760">Last year</option>
                 <option value="all" selected>All readings</option>
+                <option value="custom">Custom dates</option>
               </select></label>
             <label class="field grow"><span>Format</span>
               <select id="export-format"><option value="csv">CSV</option><option value="dat">Device Manager .dat</option></select></label>
+          </div>
+          <div id="export-dates" class="field-row" hidden>
+            <label class="field grow"><span>From</span><input id="export-from" type="date"></label>
+            <label class="field grow"><span>To</span><input id="export-to" type="date"><small>Both days are included.</small></label>
           </div>
           <div class="actions"><a id="export-link" class="btn accent" href="/api/export?format=csv" download>Download</a></div>
         </article>

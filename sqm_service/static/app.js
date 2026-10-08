@@ -1699,11 +1699,21 @@ $("#meter-refresh").addEventListener("click", loadMeter);
 function syncExportLink() {
   const range = $("#export-range").value;
   const params = new URLSearchParams({ format: $("#export-format").value });
-  if (range !== "all") params.set("since", String(Math.floor(Date.now() / 1000) - Number(range) * 3600));
+  $("#export-dates").hidden = range !== "custom";
+  if (range === "custom") {
+    // Whole local days, from the start of From to the end of To.
+    const from = $("#export-from").valueAsDate;
+    const to = $("#export-to").valueAsDate;
+    const startOfDay = (date) => new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    if (from) params.set("since", String(Math.floor(startOfDay(from).getTime() / 1000)));
+    if (to) params.set("until", String(Math.floor(startOfDay(to).getTime() / 1000) + 86399));
+  } else if (range !== "all") {
+    params.set("since", String(Math.floor(Date.now() / 1000) - Number(range) * 3600));
+  }
   $("#export-link").href = `/api/export?${params}`;
 }
-$("#export-range").addEventListener("change", syncExportLink);
-$("#export-format").addEventListener("change", syncExportLink);
+["#export-range", "#export-format", "#export-from", "#export-to"].forEach((selector) =>
+  $(selector).addEventListener("change", syncExportLink));
 $("#export-link").addEventListener("click", syncExportLink);
 $("#moonlit-toggle input").addEventListener("change", (event) => {
   state.hideMoonlit = event.currentTarget.checked;
