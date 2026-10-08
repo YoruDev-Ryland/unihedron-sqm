@@ -385,6 +385,7 @@ right away.
     "message": "No reading for more than 2 hours. Last error: connect to 192.168.1.50:10001 failed: timed out.",
     "collector_state": "offline",
     "last_success": "2026-10-07T04:13:51+00:00",
+    "offline_since": "2026-10-07T04:13:51+00:00",
     "public_url": "http://localhost:7942"
   }
   ```
@@ -394,7 +395,8 @@ right away.
 
 If a message cannot be delivered, the collector tries again on the next check
 a minute later, so a short outage at the receiving end does not lose the
-alert.
+alert. Saving new alert settings starts fresh, so a new URL is told about an
+outage that is still going on.
 
 ## Configuration
 

@@ -128,7 +128,7 @@ STARTED = time.time()
 _alert_state = alerts.AlertState(**json.loads(db.get_setting("alerts.state") or "{}"))
 
 
-def _alert_context(message: str) -> dict:
+def _alert_context(message: str, offline_since: float | None = None) -> dict:
     serial, _model = _meter_identity()
     latest = db.latest_reading()
     return {
@@ -136,8 +136,17 @@ def _alert_context(message: str) -> dict:
         "message": message,
         "collector_state": collector.state,
         "last_success": _iso(latest["ts"]) if latest else None,
+        "offline_since": _iso(offline_since),
         "public_url": config.public_url,
     }
+
+
+def _reset_alerts(_section: dict | None = None) -> None:
+    # New alert settings start fresh: a changed URL should hear about an
+    # outage that is still going on.
+    global _alert_state
+    _alert_state = alerts.AlertState()
+    db.set_setting("alerts.state", json.dumps(_alert_state.__dict__))
 
 
 def check_alerts(now: float) -> str | None:
@@ -161,7 +170,10 @@ def check_alerts(now: float) -> str | None:
         f"Last error: {collector.last_error or 'none'}."
         if event == "offline" else "Readings are arriving again."
     )
-    request = alerts.build_request(event, section["format"], section["url"], _alert_context(message))
+    since = next_state.since if event == "offline" else _alert_state.since
+    request = alerts.build_request(
+        event, section["format"], section["url"], _alert_context(message, since)
+    )
     ok, detail = alerts.deliver(request)
     if not ok:
         log.warning("alert delivery failed, will retry: %s", detail)
@@ -181,6 +193,7 @@ async def _watch_alerts() -> None:
 
 
 settings.on_change("mqtt", _configure_mqtt)
+settings.on_change("alerts", _reset_alerts)
 # Follow a new serial before publishing, so no reading goes to the old topic.
 collector.add_listener(_mqtt_follow_serial)
 collector.add_listener(publisher.on_poll)

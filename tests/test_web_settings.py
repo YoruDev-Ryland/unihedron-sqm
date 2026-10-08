@@ -125,3 +125,26 @@ def test_alert_retries_after_failed_delivery_without_duplicates(client, monkeypa
     assert main.check_alerts(10_120.0) is None          # not repeated
     assert len(sent) == 2
     client.put("/api/settings/alerts", json={"url": ""})
+
+
+def test_changing_alert_settings_resets_alert_state(client, monkeypatch):
+    monkeypatch.setattr(main, "_alert_state", main.alerts.AlertState(True, 123.0))
+    client.put("/api/settings/alerts", json={"offline_hours": "3"})
+    assert main._alert_state == main.alerts.AlertState()
+    assert main.db.get_setting("alerts.state") == '{"alerting": false, "since": null}'
+
+
+def test_offline_alert_says_when_readings_stopped(client, monkeypatch):
+    import json
+
+    client.put("/api/settings/alerts", json={"url": "https://hook.example/x", "offline_hours": "1"})
+    monkeypatch.setattr(main.config, "sqm_host", "192.0.2.9")
+    monkeypatch.setattr(main.config, "sqm_transport", "ethernet")
+    monkeypatch.setattr(main.collector, "last_success_ts", 1_000.0)
+    monkeypatch.setattr(main.db, "latest_reading", lambda: None)
+    monkeypatch.setattr(main, "_alert_state", main.alerts.AlertState())
+    sent = []
+    monkeypatch.setattr(main.alerts, "deliver", lambda request, timeout=10: (sent.append(request), (True, "HTTP 200"))[1])
+    assert main.check_alerts(10_000.0) == "offline"
+    assert json.loads(sent[0].data)["offline_since"] == "1970-01-01T00:16:40+00:00"
+    client.put("/api/settings/alerts", json={"url": ""})
