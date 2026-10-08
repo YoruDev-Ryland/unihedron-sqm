@@ -3,18 +3,9 @@ from __future__ import annotations
 import contextlib
 
 import pytest
-from fastapi.testclient import TestClient
 
 from sqm_service import main
 from test_meter import FakeMeter
-
-
-@pytest.fixture(scope="session")
-def app_client():
-    # The app closes its module-level database on shutdown, so it is started
-    # once for the whole session.
-    with TestClient(main.app) as test_client:
-        yield test_client
 
 
 @pytest.fixture

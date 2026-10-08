@@ -1,0 +1,45 @@
+import pytest
+
+from sqm_service import main
+
+
+@pytest.fixture
+def client(app_client):
+    auth = app_client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "Web-Test-Password-1"},
+    ).json()
+    app_client.headers["X-CSRF-Token"] = auth["csrf_token"]
+    yield app_client
+    app_client.post("/api/auth/logout")
+    app_client.headers.pop("X-CSRF-Token", None)
+    app_client.cookies.clear()
+
+
+def test_settings_require_sign_in(app_client):
+    app_client.cookies.clear()
+    assert app_client.get("/api/settings").status_code == 401
+
+
+def test_get_and_update_settings(client):
+    body = client.get("/api/settings").json()
+    assert body["settings"]["mqtt"]["port"] == {"value": 1883, "locked": False}
+    response = client.put("/api/settings/site", json={"latitude": "39.74", "longitude": "-104.99"})
+    assert response.status_code == 200
+    assert response.json()["latitude"]["value"] == 39.74
+
+
+def test_invalid_setting_is_rejected(client):
+    response = client.put("/api/settings/site", json={"latitude": "123"})
+    assert response.status_code == 422
+    assert response.json()["detail"]["field"] == "latitude"
+
+
+def test_locked_setting_conflicts(client, monkeypatch):
+    monkeypatch.setitem(main.settings._environ, "SQM_MQTT_HOST", "env-broker")
+    response = client.put("/api/settings/mqtt", json={"host": "x"})
+    assert response.status_code == 409
+
+
+def test_unknown_section_is_not_found(client):
+    assert client.put("/api/settings/nope", json={}).status_code == 404

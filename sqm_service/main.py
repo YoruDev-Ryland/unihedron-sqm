@@ -38,6 +38,7 @@ from .collector import Collector
 from .config import Config
 from .db import Database
 from .importer import import_text
+from .settings import SECTIONS, SettingLocked, Settings, SettingsError
 from .security import (
     generate_password,
     generate_token,
@@ -84,6 +85,7 @@ if stored_baud_rate and not os.environ.get("SQM_BAUD_RATE"):
 
 connection_lock = asyncio.Lock()
 collector = Collector(config, db, connection_lock)
+settings = Settings(db, environ=dict(os.environ))
 login_attempts: dict[str, deque[float]] = defaultdict(deque)
 DUMMY_PASSWORD_HASH = hash_password(generate_password())
 
@@ -549,6 +551,28 @@ async def test_device(
 # mode, which commonly reports every five seconds. Hosts without port 10001
 # open still fail at the short connect timeout.
 PROBE_READ_TIMEOUT = 7
+
+
+# ----------------------------------------------------------------- settings
+@app.get("/api/settings", tags=["web"])
+def get_settings(_: dict = Depends(require_user)) -> dict:
+    return {"settings": settings.public(), "status": _integration_status()}
+
+
+@app.put("/api/settings/{section}", tags=["web"])
+def put_settings(section: str, body: dict, _: dict = Depends(require_csrf)) -> dict:
+    if section not in SECTIONS:
+        raise HTTPException(status_code=404, detail="unknown settings section")
+    try:
+        return settings.update(section, body)
+    except SettingLocked as exc:
+        raise HTTPException(status_code=409, detail={"field": exc.field, "message": str(exc)}) from exc
+    except SettingsError as exc:
+        raise HTTPException(status_code=422, detail={"field": exc.field, "message": str(exc)}) from exc
+
+
+def _integration_status() -> dict:
+    return {"mqtt": getattr(app.state, "mqtt_status", "off")}
 
 
 # ---------------------------------------------------------- meter control
