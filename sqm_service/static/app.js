@@ -16,6 +16,7 @@ const state = {
   annualGeometry: null,
   annualHover: null,
   annualReveal: null,
+  hideMoonlit: false,
   chartReveal: null,
   files: [],
   timer: null,
@@ -24,7 +25,7 @@ const state = {
 const pageTitles = {
   dashboard: "Overview",
   device: "Meter",
-  import: "Import",
+  import: "Data",
   settings: "Settings",
   account: "Account",
 };
@@ -539,6 +540,13 @@ function updateCollector(collector) {
   note.hidden = good || !collector.last_error;
 }
 
+function moonPhaseName(fraction, waxing) {
+  if (fraction < 0.03) return "New moon";
+  if (fraction > 0.97) return "Full moon";
+  if (Math.abs(fraction - 0.5) < 0.04) return waxing ? "First quarter" : "Last quarter";
+  return `${waxing ? "Waxing" : "Waning"} ${fraction < 0.5 ? "crescent" : "gibbous"}`;
+}
+
 async function loadDashboard({ silent = false, reveal = false } = {}) {
   try {
     const data = await api(`/api/dashboard?hours=${state.hours}`);
@@ -550,6 +558,9 @@ async function loadDashboard({ silent = false, reveal = false } = {}) {
     animateNumber($("#latest-mpsas"), latest ? latest.mpsas : NaN, 2);
     $("#latest-temp").textContent = latest ? `${formatNumber(latest.temperature_c, 1)} °C` : "—";
     $("#latest-time").textContent = latest ? shortDate(latest.timestamp) : "Waiting";
+    const moon = data.moon;
+    $("#moon-fact").textContent = `${moonPhaseName(moon.fraction, moon.waxing)}${
+      moon.up === null ? "" : moon.up ? ", up" : ", down"}`;
     const meterLabel = data.collector.transport === "serial" ? "USB SQM" : "SQM‑LE";
     $("#station-name").textContent = device?.serial ? `${meterLabel} ${device.serial}` : "";
 
@@ -865,7 +876,9 @@ async function loadAnnual(year = null, silent = false) {
     $("#annual-caption").textContent =
       `${formatInteger(annual.observed_nights)} of ${annual.days} nights recorded, ${annual.timezone} time`;
     $("#annual-foot").textContent =
-      `Each column is one night from ${annualTime(annual.night_start_hour * 60)} to ${annualTime(annual.night_end_hour * 60)}, shaded by 30-minute averages. Gaps are times without a reading.`;
+      `Each column is one night from ${annualTime(annual.night_start_hour * 60)} to ${annualTime(annual.night_end_hour * 60)}, shaded by 30-minute averages. Gaps are times without a reading.${
+        annual.darkness ? " Dotted lines mark astronomical dusk and dawn." : ""}`;
+    $("#moonlit-toggle").hidden = !annual.darkness;
     $("#annual-map").setAttribute(
       "aria-label",
       `${annual.year} sky brightness map with ${annual.observed_nights} observing nights`,
@@ -932,7 +945,8 @@ function renderAnnualMap() {
   const revealDay = state.annualReveal === null ? Infinity : state.annualReveal * annual.days;
   cells.forEach((cell) => {
     if (cell.day > revealDay) return;
-    ctx.globalAlpha = annualCellOpacity(cell.mpsas, annual);
+    // Multiply with the twilight fade rather than replacing it.
+    ctx.globalAlpha = annualCellOpacity(cell.mpsas, annual) * (cell.moon && state.hideMoonlit ? 0.18 : 1);
     ctx.fillStyle = annualCellColor(cell.mpsas, annual);
     ctx.fillRect(
       pad.left + cell.day * dayWidth,
@@ -950,6 +964,29 @@ function renderAnnualMap() {
     glow.addColorStop(1, cssVar("--accent-glow"));
     ctx.fillStyle = glow;
     ctx.fillRect(Math.max(pad.left, edge - 36), pad.top, Math.min(36, edge - pad.left), plotHeight);
+  }
+
+  // Dotted lines trace astronomical dusk and dawn through the year.
+  if (annual.darkness && revealDay === Infinity) {
+    const toY = (minutes) => pad.top + (minutes / annual.slot_minutes) * slotHeight;
+    ctx.strokeStyle = cssVar("--chart-mark");
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ["dusk", "dawn"].forEach((edge) => {
+      ctx.beginPath();
+      let drawing = false;
+      annual.darkness.forEach((night, day) => {
+        if (!night) { drawing = false; return; }
+        const x = pad.left + (day + 0.5) * dayWidth;
+        const y = toY(night[edge]);
+        if (drawing) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        drawing = true;
+      });
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
 
   const grid = cssVar("--chart-grid");
@@ -1026,6 +1063,11 @@ function renderAnnualMap() {
     time.textContent = `${annualTime(startMinutes)}–${annualTime(startMinutes + annual.slot_minutes)}${
       cell ? `, ${formatInteger(cell.count)} readings` : ""}`;
     tip.append(value, date, time);
+    if (cell?.moon) {
+      const moon = document.createElement("span");
+      moon.textContent = `Moon up, ${Math.round(cell.moon_fraction * 100)}% lit`;
+      tip.append(moon);
+    }
     tip.hidden = false;
     tip.style.left = `${Math.max(80, Math.min(rect.width - 80, x + dayWidth / 2))}px`;
     tip.style.top = `${Math.max(42, y)}px`;
@@ -1433,6 +1475,32 @@ function renderMeter(details) {
     errors.length ? "error" : "",
   );
   renderInterval(health.status === "ok" ? details.interval : null);
+  renderLogger(details.logger);
+}
+
+function renderLogger(logger) {
+  $("#logger-card").hidden = !logger;
+  if (logger) $("#logger-summary").textContent = `${formatInteger(logger.records)} records stored in the meter.`;
+}
+
+async function pollLogger() {
+  try {
+    const status = await api("/api/meter/logger");
+    const bar = $("#logger-progress");
+    bar.hidden = !status.running && !status.read;
+    bar.firstElementChild.style.width = `${status.total ? (status.read / status.total) * 100 : 0}%`;
+    $("#logger-download").disabled = status.running;
+    if (status.running) {
+      setMessage($("#logger-message"), `Reading ${formatInteger(status.read)} of ${formatInteger(status.total)} records…`);
+      setTimeout(pollLogger, 1000);
+    } else if (status.error) {
+      setMessage($("#logger-message"), status.error, "error");
+    } else if (status.total) {
+      setMessage($("#logger-message"), `Added ${formatInteger(status.imported)} readings; ${formatInteger(status.duplicates)} were already stored.`, "success");
+    }
+  } catch (error) {
+    if (error.status === 401) showLogin();
+  }
 }
 
 async function loadMeter() {
@@ -1448,6 +1516,7 @@ async function loadMeter() {
     $("#meter-health").hidden = true;
     setMessage($("#meter-message"), error.status === 409 ? "Save a meter connection first." : error.message, error.status === 409 ? "" : "error");
     renderInterval(null);
+    renderLogger(null);
   } finally {
     button.disabled = false;
   }
@@ -1625,6 +1694,27 @@ $("[data-test-alert]").addEventListener("click", async (event) => {
   }
 });
 $("#meter-refresh").addEventListener("click", loadMeter);
+function syncExportLink() {
+  const range = $("#export-range").value;
+  const params = new URLSearchParams({ format: $("#export-format").value });
+  if (range !== "all") params.set("since", String(Math.floor(Date.now() / 1000) - Number(range) * 3600));
+  $("#export-link").href = `/api/export?${params}`;
+}
+$("#export-range").addEventListener("change", syncExportLink);
+$("#export-format").addEventListener("change", syncExportLink);
+$("#export-link").addEventListener("click", syncExportLink);
+$("#moonlit-toggle input").addEventListener("change", (event) => {
+  state.hideMoonlit = event.currentTarget.checked;
+  renderAnnualMap();
+});
+$("#logger-download").addEventListener("click", async () => {
+  try {
+    await api("/api/meter/logger/download", { method: "POST" });
+    pollLogger();
+  } catch (error) {
+    setMessage($("#logger-message"), error.message, "error");
+  }
+});
 $("#interval-off").addEventListener("click", () => changeInterval(0));
 $("#interval-form").addEventListener("submit", (event) => {
   event.preventDefault();

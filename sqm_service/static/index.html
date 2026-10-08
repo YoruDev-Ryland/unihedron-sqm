@@ -77,8 +77,8 @@
       <button class="rail-btn" data-page="device" aria-label="Meter">
         <svg class="ico"><use href="#i-meter"></use></svg><span class="tip">Meter</span>
       </button>
-      <button class="rail-btn" data-page="import" aria-label="Import">
-        <svg class="ico"><use href="#i-import"></use></svg><span class="tip">Import</span>
+      <button class="rail-btn" data-page="import" aria-label="Data">
+        <svg class="ico"><use href="#i-import"></use></svg><span class="tip">Data</span>
       </button>
       <button class="rail-btn" data-page="settings" aria-label="Settings">
         <svg class="ico"><use href="#i-settings"></use></svg><span class="tip">Settings</span>
@@ -132,6 +132,7 @@
           <dl class="now-facts">
             <div><dt>Sensor</dt><dd id="latest-temp">—</dd></div>
             <div><dt>Last reading</dt><dd id="latest-time">—</dd></div>
+            <div><dt>Moon</dt><dd id="moon-fact">—</dd></div>
             <div><dt>Collector</dt><dd><i id="live-dot" class="live-dot"></i><span id="collector-word">Starting</span></dd></div>
           </dl>
           <p id="collector-note" class="now-note" hidden></p>
@@ -145,6 +146,7 @@
               </label>
             </h3>
             <p id="annual-caption" class="panel-meta"></p>
+            <label id="moonlit-toggle" class="check year-toggle" hidden><input type="checkbox"><span>Fade moonlit hours</span></label>
             <div class="year-scale" aria-label="Colour scale from brighter to darker sky">
               <span>Brighter</span><i></i><span>Darker</span>
             </div>
@@ -281,6 +283,15 @@
         </article>
 
         <div class="duo meter-duo">
+          <article id="logger-card" class="card form-card" hidden>
+            <div class="card-top"><h3>Logger</h3><span class="state-tag">Experimental</span></div>
+            <p id="logger-summary" class="muted sm"></p>
+            <p class="muted sm">Copies records stored in the meter into this collector. Readings already stored are skipped, and the logger is not erased.</p>
+            <div class="actions"><button id="logger-download" class="btn accent" type="button">Download records</button></div>
+            <div id="logger-progress" class="thin-bar" hidden><i></i></div>
+            <p id="logger-message" class="form-message" role="status"></p>
+          </article>
+
           <article class="card form-card">
             <div class="card-top">
               <h3 id="meter-title">Meter details</h3>
@@ -329,6 +340,22 @@
       </section>
 
       <section id="page-import" class="page">
+        <article class="card form-card export-card">
+          <h3>Export readings</h3>
+          <p class="muted sm">Download readings as CSV for spreadsheets, or as a Device Manager <code>.dat</code> log.</p>
+          <div class="field-row">
+            <label class="field grow"><span>Range</span>
+              <select id="export-range">
+                <option value="24">Last 24 hours</option><option value="168">Last 7 days</option>
+                <option value="720">Last 30 days</option><option value="8760">Last year</option>
+                <option value="all" selected>All readings</option>
+              </select></label>
+            <label class="field grow"><span>Format</span>
+              <select id="export-format"><option value="csv">CSV</option><option value="dat">Device Manager .dat</option></select></label>
+          </div>
+          <div class="actions"><a id="export-link" class="btn accent" href="/api/export?format=csv" download>Download</a></div>
+        </article>
+
         <article class="card upload-card">
           <h3>Import Device Manager logs</h3>
           <p class="muted sm">Standard SDF 1.0 <code>.dat</code> files and matching six-column <code>.csv</code> files. Timestamps are de-duplicated, so re-running an import is safe.</p>
