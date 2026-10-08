@@ -25,6 +25,7 @@ const pageTitles = {
   dashboard: "Overview",
   device: "Meter",
   import: "Import",
+  settings: "Settings",
   account: "Account",
 };
 
@@ -65,8 +66,10 @@ async function api(path, options = {}) {
     data = {};
   }
   if (!response.ok) {
-    const error = new Error(data.detail || `Request failed (${response.status})`);
+    const detail = data.detail;
+    const error = new Error(detail?.message || detail || `Request failed (${response.status})`);
     error.status = response.status;
+    error.detail = detail;
     throw error;
   }
   return data;
@@ -472,6 +475,7 @@ function navigate(page) {
     if (!state.annual) loadAnnual();
   }
   if (page === "import") loadImportHistory();
+  if (page === "settings") loadSettings();
   if (page === "account") requestAnimationFrame(syncMeteorUI);
   if (page === "device") {
     loadConfig();
@@ -1472,6 +1476,64 @@ async function changeInterval(periodSeconds) {
   }
 }
 
+/* ----------------------------------------------------------------- settings */
+
+const MQTT_STATUS = { off: "Off", connecting: "Connecting", connected: "Connected" };
+
+function fillSettings(settings) {
+  $$(".settings-form").forEach((form) => {
+    const section = settings[form.dataset.section] || {};
+    Object.entries(section).forEach(([name, field]) => {
+      const input = form.elements[name];
+      if (!input) return;
+      if (input.type === "checkbox") input.checked = Boolean(field.value);
+      else if (input.type === "password") {
+        input.value = "";
+        input.placeholder = field.set ? "Saved; leave blank to keep" : "";
+      } else input.value = field.value ?? "";
+      input.disabled = field.locked;
+      input.title = field.locked ? "Set by the environment" : "";
+    });
+  });
+}
+
+function showMqttStatus(status) {
+  const tag = $("#mqtt-status");
+  tag.textContent = MQTT_STATUS[status] || "Error";
+  tag.title = status.startsWith("error") ? status.slice(7) : "";
+  tag.classList.toggle("on", status === "connected");
+}
+
+async function loadSettings() {
+  try {
+    const data = await api("/api/settings");
+    fillSettings(data.settings);
+    showMqttStatus(data.status.mqtt);
+  } catch (error) {
+    if (error.status === 401) showLogin();
+  }
+}
+
+async function saveSettings(form) {
+  const message = form.querySelector(".form-message");
+  const body = {};
+  [...form.elements].forEach((input) => {
+    if (!input.name || input.disabled) return;
+    if (input.type === "checkbox") body[input.name] = input.checked;
+    else if (input.type === "password") { if (input.value !== "") body[input.name] = input.value; }
+    else body[input.name] = input.value;
+  });
+  setMessage(message, "Saving…");
+  try {
+    await api(`/api/settings/${form.dataset.section}`, { method: "PUT", body: JSON.stringify(body) });
+    setMessage(message, "Saved.", "success");
+    loadSettings();
+  } catch (error) {
+    if (error.status === 401) return showLogin();
+    setMessage(message, error.detail?.message || error.message, "error");
+  }
+}
+
 /* -------------------------------------------------------------------- wiring */
 
 $("#login-form").addEventListener("submit", async (event) => {
@@ -1548,6 +1610,20 @@ $("#device-form").addEventListener("submit", (event) => { event.preventDefault()
 $("#test-device").addEventListener("click", () => submitDevice(true));
 $("#device-transport").addEventListener("change", () => syncTransportUI(true));
 $("#discovery-form").addEventListener("submit", discoverMeters);
+$$(".settings-form").forEach((form) => form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveSettings(form);
+}));
+$("[data-test-alert]").addEventListener("click", async (event) => {
+  const message = event.currentTarget.closest("form").querySelector(".form-message");
+  setMessage(message, "Sending a test alert…");
+  try {
+    const result = await api("/api/settings/alerts/test", { method: "POST" });
+    setMessage(message, result.ok ? `Test alert sent (${result.detail}).` : `The alert URL answered: ${result.detail}`, result.ok ? "success" : "error");
+  } catch (error) {
+    setMessage(message, error.message, "error");
+  }
+});
 $("#meter-refresh").addEventListener("click", loadMeter);
 $("#interval-off").addEventListener("click", () => changeInterval(0));
 $("#interval-form").addEventListener("submit", (event) => {

@@ -35,6 +35,7 @@
   <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16.6V5.8m0 0L8.2 9.6M12 5.8l3.8 3.8"/><path d="M4.4 15.6v3a2.4 2.4 0 002.4 2.4h10.4a2.4 2.4 0 002.4-2.4v-3"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.2 7.4A2.4 2.4 0 015.6 5h3.1a2 2 0 011.5.7l1.1 1.3h7.1a2.4 2.4 0 012.4 2.4v8.2a2.4 2.4 0 01-2.4 2.4H5.6a2.4 2.4 0 01-2.4-2.4z"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5"/><circle cx="12" cy="16.1" r=".95" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.6s-7.6-4.5-7.6-10a4.3 4.3 0 017.6-2.8 4.3 4.3 0 017.6 2.8c0 5.5-7.6 10-7.6 10z"/></symbol>
 </svg>
 
@@ -78,6 +79,9 @@
       </button>
       <button class="rail-btn" data-page="import" aria-label="Import">
         <svg class="ico"><use href="#i-import"></use></svg><span class="tip">Import</span>
+      </button>
+      <button class="rail-btn" data-page="settings" aria-label="Settings">
+        <svg class="ico"><use href="#i-settings"></use></svg><span class="tip">Settings</span>
       </button>
       <button class="rail-btn" data-page="account" aria-label="Account">
         <svg class="ico"><use href="#i-account"></use></svg><span class="tip">Account</span>
@@ -361,6 +365,65 @@
             </table>
           </div>
         </article>
+      </section>
+
+      <section id="page-settings" class="page">
+        <div class="duo">
+          <form class="card form-card settings-form" data-section="site">
+            <h3>Observing site</h3>
+            <p class="muted sm">Used to mark astronomical darkness and the moon on the year map.</p>
+            <div class="field-row">
+              <label class="field grow"><span>Latitude</span><input name="latitude" inputmode="decimal" placeholder="39.74"></label>
+              <label class="field grow"><span>Longitude</span><input name="longitude" inputmode="decimal" placeholder="-104.99"><small>East is positive.</small></label>
+            </div>
+            <div class="actions"><button class="btn accent" type="submit">Save</button></div>
+            <p class="form-message" role="status"></p>
+          </form>
+
+          <form class="card form-card settings-form" data-section="alerts">
+            <div class="card-top"><h3>Offline alerts</h3></div>
+            <p class="muted sm">Sends one message when no reading has arrived for a while, and another when readings resume.</p>
+            <label class="field"><span>Alert URL</span><input name="url" placeholder="https://ntfy.sh/your-topic" spellcheck="false"></label>
+            <div class="field-row">
+              <label class="field grow"><span>Format</span><select name="format"><option value="json">JSON webhook</option><option value="ntfy">ntfy or Gotify</option></select></label>
+              <label class="field grow"><span>Alert after (hours)</span><input name="offline_hours" type="number" min="0.25" max="168" step="0.25"></label>
+            </div>
+            <div class="actions">
+              <button class="btn ghost" type="button" data-test-alert>Send test</button>
+              <button class="btn accent" type="submit">Save</button>
+            </div>
+            <p class="form-message" role="status"></p>
+          </form>
+
+          <form class="card form-card settings-form" data-section="mqtt">
+            <div class="card-top"><h3>MQTT</h3><span id="mqtt-status" class="state-tag">Off</span></div>
+            <p class="muted sm">Publishes each reading to your broker. Home Assistant finds the meter on its own when discovery is on.</p>
+            <div class="field-row">
+              <label class="field grow"><span>Broker host</span><input name="host" placeholder="mqtt.lan" spellcheck="false"></label>
+              <label class="field port"><span>Port</span><input name="port" type="number" min="1" max="65535"></label>
+            </div>
+            <div class="field-row">
+              <label class="field grow"><span>Username <em>optional</em></span><input name="username" autocomplete="off"></label>
+              <label class="field grow"><span>Password <em>optional</em></span><input name="password" type="password" autocomplete="new-password"></label>
+            </div>
+            <div class="field-row">
+              <label class="field grow"><span>Topic prefix</span><input name="base_topic"></label>
+              <label class="field grow"><span>Discovery prefix</span><input name="discovery_prefix"></label>
+            </div>
+            <label class="check"><input name="tls" type="checkbox"><span>Use TLS</span></label>
+            <label class="check"><input name="discovery" type="checkbox"><span>Home Assistant discovery</span></label>
+            <div class="actions"><button class="btn accent" type="submit">Save</button></div>
+            <p class="form-message" role="status"></p>
+          </form>
+
+          <form class="card form-card settings-form" data-section="prometheus">
+            <h3>Prometheus</h3>
+            <p class="muted sm">Metrics are served at <code>/metrics</code>. Send the API key as a bearer token, or allow access without one on a trusted network.</p>
+            <label class="check"><input name="public" type="checkbox"><span>Allow access without the API key</span></label>
+            <div class="actions"><button class="btn accent" type="submit">Save</button></div>
+            <p class="form-message" role="status"></p>
+          </form>
+        </div>
       </section>
 
       <section id="page-account" class="page">
