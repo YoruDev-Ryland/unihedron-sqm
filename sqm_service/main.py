@@ -32,7 +32,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, discovery, exporter, meter, sky, sqm_client
+from . import __version__, astro, discovery, exporter, meter, sky, sqm_client
+from . import annual as annual_module
 from .annual import available_years, build_annual_map, timezone_for
 from .collector import Collector
 from .config import Config
@@ -86,6 +87,15 @@ if stored_baud_rate and not os.environ.get("SQM_BAUD_RATE"):
 connection_lock = asyncio.Lock()
 collector = Collector(config, db, connection_lock)
 settings = Settings(db, environ=dict(os.environ))
+
+
+def _site() -> tuple[float, float] | None:
+    lat = settings.get("site", "latitude")
+    lon = settings.get("site", "longitude")
+    return (lat, lon) if lat is not None and lon is not None else None
+
+
+settings.on_change("site", lambda _section: annual_module.clear_cache())
 login_attempts: dict[str, deque[float]] = defaultdict(deque)
 DUMMY_PASSWORD_HASH = hash_password(generate_password())
 
@@ -411,7 +421,16 @@ def dashboard(
     if info and info.get("updated"):
         info = dict(info)
         info["updated_iso"] = _iso(info["updated"])
+    now = time.time()
+    fraction, waxing = astro.moon_phase(now)
+    site = _site()
+    moon = {
+        "fraction": round(fraction, 3),
+        "waxing": waxing,
+        "up": astro.moon_altitude(now, *site) > 0 if site else None,
+    }
     return {
+        "moon": moon,
         "latest": _decorate(db.latest_reading()),
         "stats": db.stats(since),
         "chart": db.chart_readings(since),
@@ -440,7 +459,7 @@ def annual_map(
         timezone = timezone_for(config.timezone)
         current_year = datetime.now(timezone).year
         selected_year = year if year is not None else current_year
-        result = build_annual_map(db, selected_year, config.timezone)
+        result = build_annual_map(db, selected_year, config.timezone, site=_site())
         result["available_years"] = available_years(
             db, config.timezone, current_year
         )

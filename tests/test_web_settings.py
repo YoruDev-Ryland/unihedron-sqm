@@ -55,3 +55,19 @@ def test_export_with_api_key(app_client):
 def test_export_requires_auth(app_client):
     app_client.cookies.clear()
     assert app_client.get("/api/export").status_code == 401
+
+
+def test_dashboard_reports_moon(client):
+    client.put("/api/settings/site", json={"latitude": "", "longitude": ""})
+    moon = client.get("/api/dashboard").json()["moon"]
+    assert 0 <= moon["fraction"] <= 1 and isinstance(moon["waxing"], bool)
+    assert moon["up"] is None  # no site set
+
+
+def test_site_change_clears_the_darkness_cache(client):
+    from sqm_service import annual
+
+    annual._darkness_year(2025, 1.0, 2.0, "UTC", 2)
+    assert annual._darkness_year.cache_info().currsize > 0
+    client.put("/api/settings/site", json={"latitude": "", "longitude": ""})
+    assert annual._darkness_year.cache_info().currsize == 0

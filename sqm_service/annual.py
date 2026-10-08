@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from . import astro
 from .db import Database
 
 SLOT_MINUTES = 30
@@ -21,6 +23,9 @@ SCALE_MAX_MPSAS = 22.0
 # loaded at all.
 FADE_MIN_MPSAS = 10.0
 FADE_MAX_MPSAS = 17.0
+DARK_SUN_ALTITUDE = -18.0
+WINDOW_MINUTES = SLOTS_PER_NIGHT * SLOT_MINUTES
+SAMPLE_MINUTES = 5
 
 
 def timezone_for(name: str) -> ZoneInfo:
@@ -40,7 +45,37 @@ def available_years(db: Database, timezone_name: str, fallback_year: int) -> lis
     return list(range(last_year, first_year - 1, -1))
 
 
-def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
+def darkness_window(year: int, day: int, lat: float, lon: float, timezone_name: str) -> dict | None:
+    """Minutes after 16:00 local when astronomical darkness starts and ends."""
+    zone = timezone_for(timezone_name)
+    night = date(year, 1, 1) + timedelta(days=day)
+    start = datetime(night.year, night.month, night.day, NIGHT_START_HOUR, tzinfo=zone).timestamp()
+    samples = [
+        astro.sun_altitude(start + minute * 60, lat, lon) < DARK_SUN_ALTITUDE
+        for minute in range(0, WINDOW_MINUTES + 1, SAMPLE_MINUTES)
+    ]
+    if not any(samples):
+        return None
+    first = samples.index(True)
+    last = len(samples) - 1 - samples[::-1].index(True)
+    return {"dusk": first * SAMPLE_MINUTES, "dawn": last * SAMPLE_MINUTES}
+
+
+@lru_cache(maxsize=8)
+def _darkness_year(year: int, lat: float, lon: float, timezone_name: str, days: int) -> tuple:
+    return tuple(darkness_window(year, day, lat, lon, timezone_name) for day in range(days))
+
+
+def clear_cache() -> None:
+    _darkness_year.cache_clear()
+
+
+def build_annual_map(
+    db: Database,
+    year: int,
+    timezone_name: str,
+    site: tuple[float, float] | None = None,
+) -> dict:
     timezone = timezone_for(timezone_name)
     first_day = date(year, 1, 1)
     next_year = date(year + 1, 1, 1)
@@ -59,7 +94,7 @@ def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
 
     # During the fall DST fold, two UTC bins can map to one local cell. Keep a
     # weighted aggregate so both repeated half-hours are represented.
-    cells: dict[tuple[int, int], tuple[float, int]] = {}
+    cells: dict[tuple[int, int], tuple[float, int, float]] = {}
     for item in db.annual_bins(start, end, SLOT_SECONDS, minimum_mpsas=FADE_MIN_MPSAS):
         bin_number = int(item["bin"])
         midpoint = start + bin_number * SLOT_SECONDS + SLOT_SECONDS / 2
@@ -83,8 +118,8 @@ def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
 
         count = int(item["reading_count"])
         weighted_value = float(item["avg_mpsas"]) * count
-        prior_weight, prior_count = cells.get((day, slot), (0.0, 0))
-        cells[(day, slot)] = (prior_weight + weighted_value, prior_count + count)
+        prior_weight, prior_count, first_midpoint = cells.get((day, slot), (0.0, 0, midpoint))
+        cells[(day, slot)] = (prior_weight + weighted_value, prior_count + count, first_midpoint)
 
     output = [
         {
@@ -93,11 +128,12 @@ def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
             "mpsas": round(weighted / count, 3),
             "count": count,
         }
-        for (day, slot), (weighted, count) in sorted(cells.items())
+        for (day, slot), (weighted, count, _midpoint) in sorted(cells.items())
     ]
+    midpoints = [midpoint for _key, (_weighted, _count, midpoint) in sorted(cells.items())]
     values = [cell["mpsas"] for cell in output]
 
-    return {
+    result = {
         "year": year,
         "timezone": timezone_name,
         "days": day_count,
@@ -115,4 +151,12 @@ def build_annual_map(db: Database, year: int, timezone_name: str) -> dict:
         "max_mpsas": max(values) if values else None,
         "cells": output,
     }
+    if site is not None:
+        lat, lon = site
+        result["darkness"] = list(_darkness_year(year, lat, lon, timezone_name, day_count))
+        for cell, midpoint in zip(output, midpoints):
+            if astro.moon_altitude(midpoint, lat, lon) > 0:
+                cell["moon"] = True
+                cell["moon_fraction"] = round(astro.moon_phase(midpoint)[0], 2)
+    return result
 

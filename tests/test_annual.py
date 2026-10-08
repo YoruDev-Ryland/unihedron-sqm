@@ -85,3 +85,39 @@ def test_leap_year_has_366_columns(tmp_path: Path):
     assert result["cells"] == []
     database.close()
 
+
+
+from sqm_service.annual import clear_cache, darkness_window
+
+DENVER = (39.74, -104.99)
+
+
+def denver_timestamp(year: int, month: int, day: int, hour: int, minute: int) -> float:
+    return datetime(
+        year, month, day, hour, minute, tzinfo=ZoneInfo("America/Denver")
+    ).timestamp()
+
+
+def test_darkness_window_in_winter():
+    window = darkness_window(2025, 354, *DENVER, "America/Denver")  # Dec 21
+    # Astronomical dusk about 18:12, dawn about 05:48 local.
+    assert 120 <= window["dusk"] <= 150     # 18:00 to 18:30 from 16:00
+    assert 805 <= window["dawn"] <= 840     # 05:25 to 06:00 from 16:00
+
+
+def test_no_astronomical_darkness_in_northern_summer():
+    assert darkness_window(2025, 171, 57.0, -3.0, "Europe/London") is None  # Jun 21
+
+
+def test_site_adds_darkness_and_moon_flags(tmp_path: Path):
+    clear_cache()
+    database = Database(tmp_path / "sqm.db")
+    # Full moon night of 2025-01-13; a reading at 23:00 local in Denver.
+    database.insert_reading(reading(18.5), denver_timestamp(2025, 1, 13, 23, 0))
+    plain = build_annual_map(database, 2025, "America/Denver")
+    assert "darkness" not in plain and "moon" not in plain["cells"][0]
+    sited = build_annual_map(database, 2025, "America/Denver", site=DENVER)
+    assert len(sited["darkness"]) == 365
+    cell = sited["cells"][0]
+    assert cell["moon"] is True and cell["moon_fraction"] > 0.95
+    database.close()
