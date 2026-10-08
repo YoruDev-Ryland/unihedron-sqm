@@ -43,3 +43,15 @@ def test_locked_setting_conflicts(client, monkeypatch):
 
 def test_unknown_section_is_not_found(client):
     assert client.put("/api/settings/nope", json={}).status_code == 404
+
+
+def test_export_with_api_key(app_client):
+    response = app_client.get("/api/export?format=csv", headers={"X-API-Key": "web-test-api-key"})
+    assert response.status_code == 200
+    assert response.headers["content-disposition"].startswith('attachment; filename="sqm-')
+    assert response.text.startswith("utc_iso,")
+
+
+def test_export_requires_auth(app_client):
+    app_client.cookies.clear()
+    assert app_client.get("/api/export").status_code == 401

@@ -201,6 +201,18 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def readings_after(self, after: float, until: float | None, limit: int) -> list[dict]:
+        sql = "SELECT * FROM readings WHERE ts > ?"
+        params: list[float | int] = [after]
+        if until is not None:
+            sql += " AND ts <= ?"
+            params.append(until)
+        sql += " ORDER BY ts ASC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def chart_readings(self, since: float, limit: int = 1600) -> list[dict]:
         with self._lock:
             total = self._conn.execute(
@@ -251,10 +263,14 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def reading_bounds(self) -> tuple[float | None, float | None]:
+    def reading_bounds(
+        self, since: float | None = None, until: float | None = None
+    ) -> tuple[float | None, float | None]:
         with self._lock:
             row = self._conn.execute(
-                "SELECT MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM readings"
+                """SELECT MIN(ts) AS first_ts, MAX(ts) AS last_ts FROM readings
+                   WHERE (? IS NULL OR ts >= ?) AND (? IS NULL OR ts <= ?)""",
+                (since, since, until, until),
             ).fetchone()
         if not row:
             return None, None

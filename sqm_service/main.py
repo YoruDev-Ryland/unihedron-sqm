@@ -28,11 +28,11 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, discovery, meter, sky, sqm_client
+from . import __version__, discovery, exporter, meter, sky, sqm_client
 from .annual import available_years, build_annual_map, timezone_for
 from .collector import Collector
 from .config import Config
@@ -804,6 +804,33 @@ async def import_directory(
 
 
 # ---------------------------------------------------------- API-key JSON API
+def require_user_or_key(
+    request: Request, x_api_key: str | None = Header(None)
+) -> None:
+    if _session_from_request(request):
+        return
+    require_api_key(x_api_key)
+
+
+@app.get("/api/export", tags=["JSON API"])
+def export_readings(
+    format: Literal["csv", "dat"] = Query("csv"),
+    since: float | None = Query(None),
+    until: float | None = Query(None),
+    _: None = Depends(require_user_or_key),
+) -> StreamingResponse:
+    info = db.device_info()
+    serial = info["serial"] if info else None
+    first, last = db.reading_bounds(since, until)
+    name = exporter.filename(format, serial, first, last, config.timezone)
+    media = "text/csv" if format == "csv" else "text/plain"
+    return StreamingResponse(
+        exporter.stream(db, format, since, until, config.timezone, serial),
+        media_type=f"{media}; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 @app.get(
     "/api/latest",
     tags=["JSON API"],
