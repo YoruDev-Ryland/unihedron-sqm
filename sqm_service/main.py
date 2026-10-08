@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import ipaddress
 import logging
 import os
@@ -32,7 +33,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, astro, discovery, exporter, meter, metrics, mqtt, sky, sqm_client
+from . import __version__, alerts, astro, discovery, exporter, meter, metrics, mqtt, sky, sqm_client
 from . import annual as annual_module
 from .annual import available_years, build_annual_map, timezone_for
 from .collector import Collector
@@ -123,6 +124,62 @@ def _mqtt_follow_serial(_collector, reading: dict | None) -> None:
         _configure_mqtt()
 
 
+STARTED = time.time()
+_alert_state = alerts.AlertState(**json.loads(db.get_setting("alerts.state") or "{}"))
+
+
+def _alert_context(message: str) -> dict:
+    serial, _model = _meter_identity()
+    latest = db.latest_reading()
+    return {
+        "serial": serial,
+        "message": message,
+        "collector_state": collector.state,
+        "last_success": _iso(latest["ts"]) if latest else None,
+        "public_url": config.public_url,
+    }
+
+
+def check_alerts(now: float) -> str | None:
+    """Run one alert check; returns the event delivered, if any.
+
+    A failed delivery leaves the state unchanged, so the next check retries
+    the same event instead of losing or repeating it.
+    """
+    global _alert_state
+    section = settings.section("alerts")
+    if not section["url"] or not collector.configured:
+        return None
+    latest = db.latest_reading()
+    candidates = [collector.last_success_ts, latest["ts"] if latest else None]
+    last_success = max((value for value in candidates if value is not None), default=None)
+    event, next_state = alerts.evaluate(now, last_success, STARTED, section["offline_hours"], _alert_state)
+    if event is None:
+        return None
+    message = (
+        f"No reading for more than {section['offline_hours']:g} hours. "
+        f"Last error: {collector.last_error or 'none'}."
+        if event == "offline" else "Readings are arriving again."
+    )
+    request = alerts.build_request(event, section["format"], section["url"], _alert_context(message))
+    ok, detail = alerts.deliver(request)
+    if not ok:
+        log.warning("alert delivery failed, will retry: %s", detail)
+        return None
+    _alert_state = next_state
+    db.set_setting("alerts.state", json.dumps(next_state.__dict__))
+    return event
+
+
+async def _watch_alerts() -> None:
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(check_alerts, time.time())
+        except Exception:
+            log.exception("alert check failed")
+
+
 settings.on_change("mqtt", _configure_mqtt)
 # Follow a new serial before publishing, so no reading goes to the old topic.
 collector.add_listener(_mqtt_follow_serial)
@@ -197,9 +254,15 @@ async def lifespan(_: FastAPI):
     log.info("web interface ready at %s", config.public_url)
     collector.start()
     _configure_mqtt()
+    alert_task = asyncio.create_task(_watch_alerts(), name="alerts")
     try:
         yield
     finally:
+        alert_task.cancel()
+        try:
+            await alert_task
+        except asyncio.CancelledError:
+            pass
         publisher.stop()
         await collector.stop()
         db.close()
@@ -625,6 +688,19 @@ def put_settings(section: str, body: dict, _: dict = Depends(require_csrf)) -> d
 
 def _integration_status() -> dict:
     return {"mqtt": publisher.status}
+
+
+@app.post("/api/settings/alerts/test", tags=["web"])
+async def test_alert(_: dict = Depends(require_csrf)) -> dict:
+    section = settings.section("alerts")
+    if not section["url"]:
+        raise HTTPException(status_code=400, detail="Set an alert URL first.")
+    request = alerts.build_request(
+        "test", section["format"], section["url"],
+        _alert_context("This is a test alert from the SQM collector."),
+    )
+    ok, detail = await asyncio.to_thread(alerts.deliver, request)
+    return {"ok": ok, "detail": detail}
 
 
 # ---------------------------------------------------------- meter control

@@ -98,3 +98,30 @@ def test_metrics_need_a_key_unless_public(app_client, monkeypatch):
     assert ok.status_code == 200 and ok.headers["content-type"].startswith("text/plain")
     monkeypatch.setitem(main.settings._environ, "SQM_PROMETHEUS_PUBLIC", "true")
     assert app_client.get("/metrics").status_code == 200
+
+
+def test_alert_test_route_reports_missing_url(client):
+    response = client.post("/api/settings/alerts/test")
+    assert response.status_code == 400
+
+
+def test_alert_retries_after_failed_delivery_without_duplicates(client, monkeypatch):
+    client.put("/api/settings/alerts", json={"url": "https://hook.example/x", "offline_hours": "1"})
+    monkeypatch.setattr(main.config, "sqm_host", "192.0.2.9")
+    monkeypatch.setattr(main.config, "sqm_transport", "ethernet")
+    monkeypatch.setattr(main.collector, "last_success_ts", 1_000.0)
+    monkeypatch.setattr(main.db, "latest_reading", lambda: None)
+    monkeypatch.setattr(main, "_alert_state", main.alerts.AlertState())
+    results = iter([(False, "HTTP 500"), (True, "HTTP 200")])
+    sent = []
+
+    def deliver(request, timeout=10):
+        sent.append(request)
+        return next(results)
+
+    monkeypatch.setattr(main.alerts, "deliver", deliver)
+    assert main.check_alerts(10_000.0) is None          # delivery failed
+    assert main.check_alerts(10_060.0) == "offline"     # retried and delivered
+    assert main.check_alerts(10_120.0) is None          # not repeated
+    assert len(sent) == 2
+    client.put("/api/settings/alerts", json={"url": ""})
