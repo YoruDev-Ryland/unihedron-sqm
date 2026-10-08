@@ -38,7 +38,10 @@ runs on amd64 and arm64, including a Raspberry Pi in an observatory.
   limiting magnitude it implies.
 - A year map with one column per night and one cell per half hour, shaded from
   bright to dark, so cloudy spells, moonlit weeks, and seasonal darkness are
-  visible at a glance.
+  visible at a glance. Twilight fades smoothly into the night.
+- With your observing site set, dotted lines mark astronomical dusk and dawn
+  through the year, moonlit hours can be faded out, and the dashboard shows
+  the moon's phase and whether it is up.
 - A brightness chart over 24 hours, 7 days, 30 days, 1 year, or 5 years, with
   the darkest, brightest, and average values for the range.
 
@@ -50,11 +53,22 @@ runs on amd64 and arm64, including a Raspberry Pi in an observatory.
   reading freshness, and light and dark calibration values.
 - Interval reporting control: see what the meter pushes now and after a
   restart, turn it off, or set a period and darkness threshold.
+- Download the records stored in an SQM-LU-DL's built-in logger
+  (experimental).
 
 **Data**
 - Imports Unihedron Device Manager `.dat` and `.csv` logs by upload or from a
   mounted folder, skipping readings that are already stored.
+- Exports any range as CSV or as a Device Manager `.dat` log.
 - A read-only JSON API protected by an API key.
+
+**Integrations**
+- MQTT publishing with Home Assistant discovery, so the meter appears as a
+  device with sensors for brightness, temperature, Bortle class, and limiting
+  magnitude.
+- Prometheus metrics for Grafana and other monitoring tools.
+- Offline alerts by webhook, ntfy, or Gotify when the meter stops reporting,
+  and again when it recovers.
 
 **Interface**
 - Dark and light themes. The dark theme sits under a slowly turning star field
@@ -67,6 +81,10 @@ runs on amd64 and arm64, including a Raspberry Pi in an observatory.
 | Light theme | Meter page |
 |---|---|
 | ![Overview in the light theme](docs/images/dashboard-light.png) | ![Meter connection, details, and interval reporting](docs/images/meter.png) |
+
+| Settings | Data |
+|---|---|
+| ![Observing site, alerts, MQTT, and Prometheus settings](docs/images/settings.png) | ![Exporting and importing readings](docs/images/data.png) |
 
 | Night sky | Theme switch | Phone |
 |---|---|---|
@@ -215,9 +233,22 @@ after a restart, and lets you change either:
 Before changing anything, the collector checks the meter's lock switch, and it
 reads the settings back afterwards to confirm the meter applied them.
 
-## Importing Device Manager logs
+### Downloading an SQM-LU-DL logger (experimental)
 
-On the **Import** page, drop `.dat` or `.csv` files from Unihedron Device
+When a USB meter has a built-in logger, the **Meter** page shows a **Logger**
+card with the number of stored records. **Download records** copies them into
+the collector, skipping readings that are already stored, and lists the
+download in the import history. The logger is never erased. Records are read
+one at a time, so a full logger can take several minutes; collection keeps
+running between batches.
+
+This follows Unihedron's published logger commands but has not yet been tested
+on real SQM-LU-DL hardware. If you try it, please report how it went in an
+issue.
+
+## Importing and exporting data
+
+On the **Data** page, drop `.dat` or `.csv` files from Unihedron Device
 Manager, or mount a log folder and import it in one step:
 
 ```yaml
@@ -229,6 +260,17 @@ Manager, or mount a log folder and import it in one step:
 Timestamps are matched against stored readings, so importing the same files
 again adds nothing twice. When a folder holds both `.dat` and `.csv` copies of
 a log, the `.dat` file is used.
+
+**Export readings** on the same page downloads the last day, week, month,
+year, or everything, as CSV for spreadsheets or as a Device Manager `.dat`
+log that other SQM tools (and this collector) can import. Exports are also
+available from the API with your key:
+
+```bash
+curl -H "X-API-Key: YOUR_KEY" -OJ "http://localhost:7942/api/export?format=csv"
+```
+
+`since` and `until` (Unix seconds) limit the range.
 
 ## JSON API
 
@@ -272,6 +314,88 @@ only accepted in the header, never in the URL, because URLs end up in logs.
 To call the API from a browser on another site, list that site in
 `CORS_ORIGINS`.
 
+## Settings and integrations
+
+Open **Settings** in the sidebar to configure the observing site, offline
+alerts, MQTT, and Prometheus. Each of these can also be set with environment
+variables (see [Configuration](#configuration)); a value set in the
+environment is shown locked in the web interface.
+
+### Observing site
+
+Enter your latitude and longitude (east positive) to add astronomical
+darkness and the moon to the year map and dashboard. The collector computes
+sun and moon positions itself, with no internet access needed.
+
+### Home Assistant and MQTT
+
+Enter your broker's host (and username and password if it needs them). Each
+reading is published as JSON to `sqm/<serial>/state`:
+
+```json
+{
+  "collector": "collecting",
+  "mpsas": 21.09,
+  "temperature_c": 8.4,
+  "frequency_hz": 3,
+  "timestamp": "2026-10-07T04:13:51+00:00",
+  "bortle": 4,
+  "nelm": 6.17
+}
+```
+
+`sqm/<serial>/availability` is `online` while the collector is connected to the broker and
+`offline` otherwise. With Home Assistant discovery on, the meter appears in
+Home Assistant as a device with sensors for sky brightness, sensor
+temperature, limiting magnitude, and Bortle class, plus a connectivity sensor
+for the collector. The **MQTT** card shows whether the broker is connected.
+
+### Prometheus
+
+Metrics are served at `/metrics` and include sky brightness, temperature,
+frequency, limiting magnitude, Bortle class, the time of the last reading,
+whether collection is running, and the number of stored readings. Send the
+API key as a bearer token:
+
+```yaml
+scrape_configs:
+  - job_name: sqm
+    scrape_interval: 60s
+    authorization:
+      credentials: YOUR_KEY
+    static_configs:
+      - targets: ["sqm.lan:7942"]
+```
+
+On a trusted network you can allow access without the key instead.
+
+### Offline alerts
+
+Enter a URL to be told when no reading has arrived for a set number of hours
+(two by default), and again when readings resume. **Send test** checks the URL
+right away.
+
+- **JSON webhook** posts a JSON body to any webhook, such as Home Assistant,
+  n8n, or a chat integration:
+
+  ```json
+  {
+    "event": "offline",
+    "serial": "4171",
+    "message": "No reading for more than 2 hours. Last error: connect to 192.168.1.50:10001 failed: timed out.",
+    "collector_state": "offline",
+    "last_success": "2026-10-07T04:13:51+00:00",
+    "public_url": "http://localhost:7942"
+  }
+  ```
+
+- **ntfy or Gotify** posts a plain-text message with a title, so a URL like
+  `https://ntfy.sh/your-topic` sends a push notification to your phone.
+
+If a message cannot be delivered, the collector tries again on the next check
+a minute later, so a short outage at the receiving end does not lose the
+alert.
+
 ## Configuration
 
 All settings are optional. Set them in `.env` next to `compose.yaml`.
@@ -296,9 +420,25 @@ All settings are optional. Set them in `.env` next to `compose.yaml`.
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` when the app is served over HTTPS |
 | `CORS_ORIGINS` | blank | Comma-separated origins allowed to call the API from a browser |
 | `MAX_UPLOAD_MB` | `20` | Largest log file accepted by the importer |
+| `SQM_SITE_LATITUDE` | blank | Observing site latitude in degrees |
+| `SQM_SITE_LONGITUDE` | blank | Observing site longitude in degrees, east positive |
+| `SQM_MQTT_HOST` | blank | MQTT broker host; blank turns MQTT off |
+| `SQM_MQTT_PORT` | `1883` | MQTT broker port |
+| `SQM_MQTT_USERNAME` | blank | MQTT username |
+| `SQM_MQTT_PASSWORD` | blank | MQTT password; also accepts `SQM_MQTT_PASSWORD_FILE` |
+| `SQM_MQTT_TLS` | `false` | Connect to the broker over TLS |
+| `SQM_MQTT_BASE_TOPIC` | `sqm` | Topic prefix for state and availability |
+| `SQM_MQTT_DISCOVERY` | `true` | Publish Home Assistant discovery messages |
+| `SQM_MQTT_DISCOVERY_PREFIX` | `homeassistant` | Home Assistant discovery prefix |
+| `SQM_PROMETHEUS_PUBLIC` | `false` | Serve `/metrics` without the API key |
+| `SQM_ALERTS_URL` | blank | Webhook, ntfy, or Gotify URL for offline alerts |
+| `SQM_ALERTS_FORMAT` | `json` | `json` or `ntfy` |
+| `SQM_ALERTS_OFFLINE_HOURS` | `2` | Hours without a reading before an alert |
 
-The meter connection can also be chosen on the **Meter** page. A connection
-set in the environment takes precedence over one saved in the web interface.
+The meter connection can also be chosen on the **Meter** page, and the
+`SQM_SITE_`, `SQM_MQTT_`, `SQM_PROMETHEUS_`, and `SQM_ALERTS_` values on the
+**Settings** page. A value set in the environment takes precedence over one
+saved in the web interface.
 `ADMIN_PASSWORD` and `API_KEY` also accept `_FILE` variants for Docker secrets,
 such as `ADMIN_PASSWORD_FILE=/run/secrets/sqm_admin`.
 
@@ -410,8 +550,10 @@ docker compose -f compose.yaml -f compose.dev.yaml up -d --build
 ```
 
 The tests cover the meter protocol (with simulated Ethernet and serial
-meters), meter settings, the importer, the year map, sky-quality conversions,
-the meter web routes, and security helpers. The `tests/smoke_*.py` scripts are
+meters), meter settings, the LU-DL logger, the importer and exporter, the year
+map, sun and moon positions (checked against worked examples from Meeus's
+*Astronomical Algorithms*), MQTT and Home Assistant discovery, Prometheus
+metrics, alerts, settings, the web routes, and security helpers. The `tests/smoke_*.py` scripts are
 end-to-end checks to run against a started container.
 
 Every push to `main` and every version tag runs the tests and publishes a
