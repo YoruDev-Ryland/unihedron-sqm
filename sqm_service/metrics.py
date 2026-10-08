@@ -16,6 +16,12 @@ HELP = {
 }
 
 
+def _number(value: float) -> str:
+    # Full precision: `:g` would round a Unix timestamp to six digits.
+    number = float(value)
+    return str(int(number)) if number.is_integer() else repr(number)
+
+
 def render(latest: dict | None, serial: str, collector_up: bool, last_success: float | None, stored: int) -> str:
     values: dict[str, float | None] = dict.fromkeys(HELP)
     if latest:
@@ -36,5 +42,5 @@ def render(latest: dict | None, serial: str, collector_up: bool, last_success: f
     for name, value in values.items():
         if value is None:
             continue
-        lines += [f"# HELP {name} {HELP[name]}", f"# TYPE {name} gauge", f'{name}{{serial="{serial}"}} {value:g}']
+        lines += [f"# HELP {name} {HELP[name]}", f"# TYPE {name} gauge", f'{name}{{serial="{serial}"}} {_number(value)}']
     return "\n".join(lines) + "\n"
