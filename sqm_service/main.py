@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, astro, discovery, exporter, meter, sky, sqm_client
+from . import __version__, astro, discovery, exporter, meter, mqtt, sky, sqm_client
 from . import annual as annual_module
 from .annual import available_years, build_annual_map, timezone_for
 from .collector import Collector
@@ -96,6 +96,37 @@ def _site() -> tuple[float, float] | None:
 
 
 settings.on_change("site", lambda _section: annual_module.clear_cache())
+
+publisher = mqtt.MqttPublisher()
+
+
+def _meter_identity() -> tuple[str, str]:
+    info = db.device_info()
+    serial = str(info["serial"]) if info and info.get("serial") else "meter"
+    model = str(info["model"]) if info and info.get("model") is not None else "unknown"
+    return serial, model
+
+
+_mqtt_identity: tuple[str, str] | None = None
+
+
+def _configure_mqtt(_section: dict | None = None) -> None:
+    global _mqtt_identity
+    _mqtt_identity = _meter_identity()
+    publisher.configure(settings.section("mqtt"), *_mqtt_identity, __version__)
+
+
+def _mqtt_follow_serial(_collector, reading: dict | None) -> None:
+    # The meter may be identified after MQTT was configured (a fresh install,
+    # or a different meter); move the topics to the new serial once.
+    if reading is not None and _meter_identity() != _mqtt_identity:
+        _configure_mqtt()
+
+
+settings.on_change("mqtt", _configure_mqtt)
+# Follow a new serial before publishing, so no reading goes to the old topic.
+collector.add_listener(_mqtt_follow_serial)
+collector.add_listener(publisher.on_poll)
 login_attempts: dict[str, deque[float]] = defaultdict(deque)
 DUMMY_PASSWORD_HASH = hash_password(generate_password())
 
@@ -165,9 +196,11 @@ async def lifespan(_: FastAPI):
     _bootstrap()
     log.info("web interface ready at %s", config.public_url)
     collector.start()
+    _configure_mqtt()
     try:
         yield
     finally:
+        publisher.stop()
         await collector.stop()
         db.close()
 
@@ -591,7 +624,7 @@ def put_settings(section: str, body: dict, _: dict = Depends(require_csrf)) -> d
 
 
 def _integration_status() -> dict:
-    return {"mqtt": getattr(app.state, "mqtt_status", "off")}
+    return {"mqtt": publisher.status}
 
 
 # ---------------------------------------------------------- meter control

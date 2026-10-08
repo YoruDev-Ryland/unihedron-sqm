@@ -2,3 +2,4 @@ fastapi==0.139.2
 pyserial==3.5
 python-multipart==0.0.32
 uvicorn==0.52.0
+paho-mqtt==2.1.0

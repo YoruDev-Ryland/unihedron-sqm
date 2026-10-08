@@ -71,3 +71,21 @@ def test_site_change_clears_the_darkness_cache(client):
     assert annual._darkness_year.cache_info().currsize > 0
     client.put("/api/settings/site", json={"latitude": "", "longitude": ""})
     assert annual._darkness_year.cache_info().currsize == 0
+
+
+def test_mqtt_settings_start_and_stop_publishing(client):
+    client.put("/api/settings/mqtt", json={"host": "127.0.0.1", "port": "1"})
+    assert client.get("/api/settings").json()["status"]["mqtt"] != "off"
+    client.put("/api/settings/mqtt", json={"host": ""})
+    assert client.get("/api/settings").json()["status"]["mqtt"] == "off"
+
+
+def test_mqtt_follows_the_meter_serial(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(main.publisher, "configure", lambda config, serial, model, version: calls.append(serial))
+    main.db.upsert_device_info(
+        {"protocol": 4, "model": 3, "feature": 80, "serial": 5555, "raw": "i"}, "test"
+    )
+    main._mqtt_follow_serial(main.collector, {"mpsas": 21.0})
+    main._mqtt_follow_serial(main.collector, {"mpsas": 21.0})
+    assert calls == ["5555"]  # reconfigured once, not on every poll
