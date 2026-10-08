@@ -89,3 +89,12 @@ def test_mqtt_follows_the_meter_serial(client, monkeypatch):
     main._mqtt_follow_serial(main.collector, {"mpsas": 21.0})
     main._mqtt_follow_serial(main.collector, {"mpsas": 21.0})
     assert calls == ["5555"]  # reconfigured once, not on every poll
+
+
+def test_metrics_need_a_key_unless_public(app_client, monkeypatch):
+    app_client.cookies.clear()
+    assert app_client.get("/metrics").status_code == 401
+    ok = app_client.get("/metrics", headers={"Authorization": "Bearer web-test-api-key"})
+    assert ok.status_code == 200 and ok.headers["content-type"].startswith("text/plain")
+    monkeypatch.setitem(main.settings._environ, "SQM_PROMETHEUS_PUBLIC", "true")
+    assert app_client.get("/metrics").status_code == 200

@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, astro, discovery, exporter, meter, mqtt, sky, sqm_client
+from . import __version__, astro, discovery, exporter, meter, metrics, mqtt, sky, sqm_client
 from . import annual as annual_module
 from .annual import available_years, build_annual_map, timezone_for
 from .collector import Collector
@@ -853,6 +853,22 @@ async def import_directory(
         result = await asyncio.to_thread(import_text, db, path.name, content)
         results.append(result.as_dict())
     return _aggregate_imports(results)
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics(
+    authorization: str | None = Header(None), x_api_key: str | None = Header(None)
+) -> Response:
+    if not settings.get("prometheus", "public"):
+        bearer = authorization[7:] if authorization and authorization.startswith("Bearer ") else None
+        require_api_key(bearer or x_api_key)
+    info = db.device_info()
+    serial = str(info["serial"]) if info and info.get("serial") else "meter"
+    body = metrics.render(
+        db.latest_reading(), serial, collector.state == "collecting",
+        collector.last_success_ts, db.count(),
+    )
+    return Response(body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 # ---------------------------------------------------------- API-key JSON API
