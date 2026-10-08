@@ -232,3 +232,10 @@ def test_change_that_does_not_stick_is_reported():
 def test_interval_values_are_validated(kwargs):
     with pytest.raises(ValueError):
         run(meter.set_interval(FakeMeter().send, **kwargs))
+
+
+def test_details_probe_logger_when_asked():
+    fake = FakeMeter()
+    fake.replies[b"L1x"] = "L1,0000000042"
+    assert run(meter.read_details(fake.send, probe_logger=True))["logger"] == {"records": 42}
+    assert run(meter.read_details(FakeMeter().send))["logger"] is None

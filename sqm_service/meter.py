@@ -150,7 +150,9 @@ async def _default_identify(send: Send) -> dict:
     )
 
 
-async def read_details(send: Send, identify: Identify | None = None) -> dict:
+async def read_details(
+    send: Send, identify: Identify | None = None, probe_logger: bool = False
+) -> dict:
     """Collect identity, calibration, interval, lock, and freshness.
 
     `identify` returns unit information, falling back to a pushed interval
@@ -164,6 +166,7 @@ async def read_details(send: Send, identify: Identify | None = None) -> dict:
         "interval": None,
         "lock": None,
         "freshness": None,
+        "logger": None,
         "errors": {},
     }
     try:
@@ -217,6 +220,14 @@ async def read_details(send: Send, identify: Identify | None = None) -> dict:
         "freshness", b"r1x", is_freshness_reply, parse_freshness,
         FEATURE_FRESHNESS,
     )
+    if probe_logger:
+        # Only an SQM-LU-DL answers `L1x`; silence just means no logger, so it
+        # is not reported as an error.
+        try:
+            line = await send(b"L1x", lambda reply: reply.startswith("L1,"), COMMAND_TIMEOUT)
+            details["logger"] = {"records": int(line.split(",", 1)[1])}
+        except (SQMError, ValueError, IndexError):
+            details["logger"] = None
     return details
 
 

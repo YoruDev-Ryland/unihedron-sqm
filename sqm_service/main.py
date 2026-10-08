@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, alerts, astro, discovery, exporter, meter, metrics, mqtt, sky, sqm_client
+from . import __version__, alerts, astro, discovery, exporter, logger_dl, meter, metrics, mqtt, sky, sqm_client
 from . import annual as annual_module
 from .annual import available_years, build_annual_map, timezone_for
 from .collector import Collector
@@ -720,7 +720,9 @@ async def meter_details(_: dict = Depends(require_user)) -> dict:
     try:
         async with collector.session() as link:
             details = await meter.read_details(
-                link.send, lambda: link.identify(METER_IDENTIFY_TIMEOUT)
+                link.send,
+                lambda: link.identify(METER_IDENTIFY_TIMEOUT),
+                probe_logger=config.sqm_transport == "serial",
             )
     except sqm_client.SQMError as exc:
         details = {
@@ -730,6 +732,7 @@ async def meter_details(_: dict = Depends(require_user)) -> dict:
             "interval": None,
             "lock": None,
             "freshness": None,
+            "logger": None,
             "errors": {},
         }
     info = details["info"]
@@ -761,6 +764,28 @@ async def change_interval(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except sqm_client.SQMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+logger_job = logger_dl.LoggerDownload()
+
+
+@app.get("/api/meter/logger", tags=["web"])
+def logger_status(_: dict = Depends(require_user)) -> dict:
+    return logger_job.state
+
+
+@app.post("/api/meter/logger/download", tags=["web"])
+async def start_logger_download(_: dict = Depends(require_csrf)) -> dict:
+    if config.sqm_transport != "serial":
+        raise HTTPException(status_code=400, detail="Logger download needs a USB meter.")
+    if logger_job.state["running"]:
+        raise HTTPException(status_code=409, detail="A download is already running.")
+    serial, _model = _meter_identity()
+    # Mark it running before returning, so a second click is refused even if
+    # the task has not started yet.
+    logger_job.state["running"] = True
+    asyncio.create_task(logger_job.run(collector.session, db, serial))
+    return logger_job.state
 
 
 async def _probe_device(host: str, port: int, timeout: float = 0.6) -> dict | None:

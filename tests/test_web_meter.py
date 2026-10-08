@@ -104,3 +104,22 @@ def test_favicon_is_served(app_client):
     response = app_client.get("/favicon.ico")
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
+
+
+def test_logger_download_needs_a_serial_meter(client):
+    assert client.get("/api/meter/logger").json()["running"] is False
+    response = client.post("/api/meter/logger/download")
+    assert response.status_code == 400
+
+
+def test_logger_download_runs_once_at_a_time(client, monkeypatch):
+    monkeypatch.setattr(main.config, "sqm_transport", "serial")
+    monkeypatch.setitem(main.logger_job.state, "running", True)
+    assert client.post("/api/meter/logger/download").status_code == 409
+
+
+def test_serial_meter_details_include_the_logger(client, monkeypatch):
+    monkeypatch.setattr(main.config, "sqm_transport", "serial")
+    monkeypatch.setattr(main.config, "sqm_serial_device", "/dev/sqm")
+    client.fake.replies[b"L1x"] = "L1,0000000042"
+    assert client.get("/api/meter").json()["logger"] == {"records": 42}
