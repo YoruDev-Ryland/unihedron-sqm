@@ -263,7 +263,10 @@ async def lifespan(_: FastAPI):
             await alert_task
         except asyncio.CancelledError:
             pass
-        publisher.stop()
+        stopping = publisher.stop()
+        if stopping is not None:
+            # Give the broker a moment to receive the `offline` message.
+            await asyncio.to_thread(stopping.join, 2)
         await collector.stop()
         db.close()
 

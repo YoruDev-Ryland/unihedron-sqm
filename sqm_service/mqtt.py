@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 
 from . import sky
@@ -142,11 +143,27 @@ class MqttPublisher:
             return
         self._publish(self._names["state"], json.dumps(state_payload(reading, collector.state)))
 
-    def stop(self) -> None:
+    def stop(self) -> threading.Thread | None:
+        """Disconnect in the background; returns the worker for callers that wait.
+
+        A clean disconnect does not trigger the broker's last will, so
+        `offline` is published first. paho's thread may be stuck in a connect
+        timeout, so joining it never happens on the caller's thread.
+        """
         client, self._client = self._client, None
-        if client is not None:
+        names = self._names
+        if client is None:
+            return None
+
+        def shut_down() -> None:
             try:
+                if names is not None:
+                    client.publish(names["availability"], "offline", retain=True)
                 client.disconnect()
                 client.loop_stop()
             except Exception:
                 pass
+
+        worker = threading.Thread(target=shut_down, name="mqtt-stop", daemon=True)
+        worker.start()
+        return worker

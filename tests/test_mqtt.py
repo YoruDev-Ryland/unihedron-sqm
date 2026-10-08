@@ -110,3 +110,51 @@ def test_refused_connection_reports_error_and_publishes_nothing():
     accepted = ReasonCode(PacketTypes.CONNACK, "Success")
     client.on_connect(client, None, None, accepted, None)
     assert publisher.status == "connected"
+
+
+class SlowClient(FakeClient):
+    """A client whose network thread is stuck, e.g. in a connect timeout."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.events = []
+
+    def publish(self, topic, payload, retain=False, qos=0):
+        self.events.append(("publish", topic, payload, retain))
+        super().publish(topic, payload, retain, qos)
+
+    def disconnect(self):
+        self.events.append(("disconnect",))
+
+    def loop_stop(self):
+        import time
+        time.sleep(1.0)
+        self.events.append(("loop_stop",))
+
+
+def test_stop_marks_offline_then_disconnects_without_blocking():
+    import time
+
+    publisher = mqtt.MqttPublisher(client_factory=SlowClient)
+    publisher.configure(CONFIG, "4171", "3", "1.1.0")
+    client = FakeClient.instances[-1]
+    client.on_connect(client, None, None, 0, None)
+    started = time.monotonic()
+    worker = publisher.stop()
+    assert time.monotonic() - started < 0.2
+    worker.join(timeout=3)
+    assert client.events[-3:] == [
+        ("publish", "sqm/4171/availability", "offline", True),
+        ("disconnect",),
+        ("loop_stop",),
+    ]
+
+
+def test_reconfigure_never_blocks_on_a_stuck_client():
+    import time
+
+    publisher = mqtt.MqttPublisher(client_factory=SlowClient)
+    publisher.configure(CONFIG, "4171", "3", "1.1.0")
+    started = time.monotonic()
+    publisher.configure({**CONFIG, "host": "other"}, "4171", "3", "1.1.0")
+    assert time.monotonic() - started < 0.2
